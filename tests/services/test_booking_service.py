@@ -52,6 +52,42 @@ def test_ensure_booking_can_be_created_allows_remaining_capacity() -> None:
     ensure_booking_can_be_created(capacity)
 
 
+@pytest.mark.parametrize("bay_count", [0, -1])
+def test_ensure_booking_can_be_created_rejects_non_positive_bay_count(
+    bay_count: int,
+) -> None:
+    capacity = BookingCapacity(
+        bay_count=bay_count,
+        overlapping_bookings=0,
+        overlapping_blocks=0,
+    )
+
+    with pytest.raises(ValidationError):
+        ensure_booking_can_be_created(capacity)
+
+
+def test_ensure_booking_can_be_created_rejects_negative_overlapping_bookings() -> None:
+    capacity = BookingCapacity(
+        bay_count=2,
+        overlapping_bookings=-1,
+        overlapping_blocks=0,
+    )
+
+    with pytest.raises(ValidationError):
+        ensure_booking_can_be_created(capacity)
+
+
+def test_ensure_booking_can_be_created_rejects_negative_overlapping_blocks() -> None:
+    capacity = BookingCapacity(
+        bay_count=2,
+        overlapping_bookings=0,
+        overlapping_blocks=-1,
+    )
+
+    with pytest.raises(ValidationError):
+        ensure_booking_can_be_created(capacity)
+
+
 def test_ensure_booking_can_be_created_rejects_full_capacity() -> None:
     capacity = BookingCapacity(
         bay_count=2,

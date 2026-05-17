@@ -33,6 +33,10 @@ class BookingCapacity:
 def ensure_booking_can_be_created(capacity: BookingCapacity) -> None:
     if capacity.bay_count <= 0:
         raise ValidationError("Branch must have at least one bay.")
+    if capacity.overlapping_bookings < 0:
+        raise ValidationError("Overlapping booking count cannot be negative.")
+    if capacity.overlapping_blocks < 0:
+        raise ValidationError("Overlapping block count cannot be negative.")
     if capacity.overlapping_blocks > 0:
         raise DomainError("Cannot create booking during blocked time.")
     if capacity.overlapping_bookings >= capacity.bay_count:
