@@ -34,7 +34,31 @@ def test_terminal_statuses_cannot_transition(current: BookingStatus, target: Boo
         ensure_transition_allowed(current, target)
 
 
-def test_active_capacity_statuses() -> None:
-    assert BookingStatus.PENDING.occupies_capacity is True
-    assert BookingStatus.CONFIRMED.occupies_capacity is True
-    assert BookingStatus.COMPLETED.occupies_capacity is False
+@pytest.mark.parametrize(
+    ("current", "target"),
+    [
+        (BookingStatus.PENDING, BookingStatus.COMPLETED),
+        (BookingStatus.PENDING, BookingStatus.NO_SHOW),
+        (BookingStatus.CONFIRMED, BookingStatus.PENDING),
+    ],
+)
+def test_active_statuses_reject_invalid_transitions(
+    current: BookingStatus, target: BookingStatus
+) -> None:
+    with pytest.raises(DomainError):
+        ensure_transition_allowed(current, target)
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (BookingStatus.PENDING, True),
+        (BookingStatus.CONFIRMED, True),
+        (BookingStatus.CANCELLED_BY_CUSTOMER, False),
+        (BookingStatus.CANCELLED_BY_ADMIN, False),
+        (BookingStatus.COMPLETED, False),
+        (BookingStatus.NO_SHOW, False),
+    ],
+)
+def test_capacity_statuses(status: BookingStatus, expected: bool) -> None:
+    assert status.occupies_capacity is expected
