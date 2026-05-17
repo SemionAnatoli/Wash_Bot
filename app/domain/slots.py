@@ -58,10 +58,26 @@ def _fits_capacity(
     bay_count: int,
     bookings: list[BookingInterval],
 ) -> bool:
-    overlapping = sum(
-        1 for booking in bookings if intervals_overlap(start, end, booking.start, booking.end)
-    )
-    return overlapping < bay_count
+    events: list[tuple[datetime, int]] = []
+    for booking in bookings:
+        if not intervals_overlap(start, end, booking.start, booking.end):
+            continue
+
+        clipped_start = max(booking.start, start)
+        clipped_end = min(booking.end, end)
+        if clipped_start >= clipped_end:
+            continue
+
+        events.append((clipped_start, 1))
+        events.append((clipped_end, -1))
+
+    occupied = 0
+    peak_occupied = 0
+    for _, delta in sorted(events, key=lambda event: (event[0], event[1])):
+        occupied += delta
+        peak_occupied = max(peak_occupied, occupied)
+
+    return peak_occupied < bay_count
 
 
 def _not_blocked(start: datetime, end: datetime, blocked: list[BlockedInterval]) -> bool:

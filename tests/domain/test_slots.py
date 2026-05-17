@@ -39,6 +39,42 @@ def test_slot_is_hidden_when_booking_would_overlap_next_booking_at_full_capacity
     assert dt(12) not in slots
 
 
+def test_slot_capacity_uses_peak_occupancy_for_sequential_bookings() -> None:
+    slots = generate_available_slots(
+        day=datetime(2026, 5, 18),
+        work_start=time(10, 0),
+        work_end=time(12, 0),
+        duration=timedelta(minutes=120),
+        slot_step=timedelta(minutes=30),
+        bay_count=2,
+        bookings=[
+            BookingInterval(start=dt(10), end=dt(11)),
+            BookingInterval(start=dt(11), end=dt(12)),
+        ],
+        blocked=[],
+    )
+
+    assert dt(10) in slots
+
+
+def test_slot_capacity_blocks_when_peak_occupancy_reaches_bay_count() -> None:
+    slots = generate_available_slots(
+        day=datetime(2026, 5, 18),
+        work_start=time(10, 0),
+        work_end=time(12, 0),
+        duration=timedelta(minutes=120),
+        slot_step=timedelta(minutes=30),
+        bay_count=2,
+        bookings=[
+            BookingInterval(start=dt(10), end=dt(12)),
+            BookingInterval(start=dt(10, 30), end=dt(11, 30)),
+        ],
+        blocked=[],
+    )
+
+    assert dt(10) not in slots
+
+
 def test_slot_is_hidden_when_it_does_not_fit_working_hours() -> None:
     slots = generate_available_slots(
         day=datetime(2026, 5, 18),

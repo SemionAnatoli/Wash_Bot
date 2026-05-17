@@ -7,6 +7,8 @@ from sqlalchemy.sql import Select
 from app.db.repositories import (
     count_overlapping_bookings,
     count_overlapping_bookings_query,
+    list_overlapping_booking_intervals,
+    overlapping_booking_intervals_query,
     overlapping_bookings_query,
 )
 from app.domain.statuses import BookingStatus
@@ -71,6 +73,29 @@ def test_count_overlapping_bookings_query_counts_rows_with_same_overlap_filters(
     assert compiled.params["end_at_1"] == REQUESTED_START
 
 
+def test_overlapping_booking_intervals_query_selects_time_bounds_only() -> None:
+    statement = overlapping_booking_intervals_query(
+        car_wash_id=1,
+        branch_id=2,
+        start_at=REQUESTED_START,
+        end_at=REQUESTED_END,
+    )
+    compiled = statement.compile()
+    sql = str(compiled).lower()
+
+    assert "bookings.start_at" in sql
+    assert "bookings.end_at" in sql
+    assert "bookings.status in" in sql
+    assert "bookings.start_at <" in sql
+    assert "bookings.end_at >" in sql
+    assert compiled.params["status_1"] == [
+        BookingStatus.PENDING.value,
+        BookingStatus.CONFIRMED.value,
+    ]
+    assert compiled.params["start_at_1"] == REQUESTED_END
+    assert compiled.params["end_at_1"] == REQUESTED_START
+
+
 @pytest.mark.asyncio
 async def test_count_overlapping_bookings_executes_count_query_with_scalar_one() -> None:
     class Result:
@@ -100,3 +125,39 @@ async def test_count_overlapping_bookings_executes_count_query_with_scalar_one()
     assert count == 3
     assert session.statement is not None
     assert "select count(" in str(session.statement.compile()).lower()
+
+
+@pytest.mark.asyncio
+async def test_list_overlapping_booking_intervals_executes_interval_query() -> None:
+    expected = [
+        (datetime(2026, 5, 18, 10, 0), datetime(2026, 5, 18, 11, 0)),
+        (datetime(2026, 5, 18, 11, 0), datetime(2026, 5, 18, 12, 0)),
+    ]
+
+    class Result:
+        def all(self) -> list[tuple[datetime, datetime]]:
+            return expected
+
+        def scalar_one(self) -> int:
+            raise AssertionError("list_overlapping_booking_intervals should not count rows")
+
+    class Session:
+        statement: Select[tuple[datetime, datetime]] | None = None
+
+        async def execute(self, statement: Select[tuple[datetime, datetime]]) -> Result:
+            self.statement = statement
+            return Result()
+
+    session = Session()
+
+    intervals = await list_overlapping_booking_intervals(
+        session,  # type: ignore[arg-type]
+        car_wash_id=1,
+        branch_id=2,
+        start_at=REQUESTED_START,
+        end_at=REQUESTED_END,
+    )
+
+    assert intervals == expected
+    assert session.statement is not None
+    assert "bookings.start_at" in str(session.statement.compile()).lower()
