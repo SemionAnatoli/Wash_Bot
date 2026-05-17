@@ -27,6 +27,13 @@ def generate_available_slots(
     bookings: list[BookingInterval],
     blocked: list[BlockedInterval],
 ) -> list[datetime]:
+    if slot_step <= timedelta(0):
+        raise ValueError("Slot step must be positive.")
+    if duration <= timedelta(0):
+        raise ValueError("Duration must be positive.")
+    if bay_count <= 0:
+        raise ValueError("Bay count must be positive.")
+
     work_start_at = datetime.combine(day.date(), work_start)
     work_end_at = datetime.combine(day.date(), work_end)
     slots: list[datetime] = []

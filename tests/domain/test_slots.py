@@ -1,5 +1,7 @@
 from datetime import datetime, time, timedelta
 
+import pytest
+
 from app.domain.slots import BookingInterval, BlockedInterval, generate_available_slots
 
 
@@ -66,3 +68,32 @@ def test_slot_is_hidden_when_blocked_interval_overlaps() -> None:
 
     assert dt(9, 30) not in slots
     assert dt(10) in slots
+
+
+@pytest.mark.parametrize(
+    ("duration", "slot_step", "bay_count"),
+    [
+        (timedelta(minutes=30), timedelta(0), 1),
+        (timedelta(minutes=30), timedelta(minutes=-30), 1),
+        (timedelta(0), timedelta(minutes=30), 1),
+        (timedelta(minutes=-30), timedelta(minutes=30), 1),
+        (timedelta(minutes=30), timedelta(minutes=30), 0),
+        (timedelta(minutes=30), timedelta(minutes=30), -1),
+    ],
+)
+def test_slot_generation_rejects_invalid_parameters(
+    duration: timedelta,
+    slot_step: timedelta,
+    bay_count: int,
+) -> None:
+    with pytest.raises(ValueError):
+        generate_available_slots(
+            day=datetime(2026, 5, 18),
+            work_start=time(9, 0),
+            work_end=time(11, 0),
+            duration=duration,
+            slot_step=slot_step,
+            bay_count=bay_count,
+            bookings=[],
+            blocked=[],
+        )
