@@ -2,7 +2,7 @@ from datetime import datetime, time, timedelta
 
 import pytest
 
-from app.domain.slots import BookingInterval, BlockedInterval, generate_available_slots
+from app.domain.slots import BlockedInterval, BookingInterval, generate_available_slots
 
 
 def dt(hour: int, minute: int = 0) -> datetime:

@@ -151,9 +151,7 @@ class BlockedSlot(Base):
 
 class Booking(Base):
     __tablename__ = "bookings"
-    __table_args__ = (
-        Index("ix_bookings_branch_time_window", "branch_id", "start_at", "end_at"),
-    )
+    __table_args__ = (Index("ix_bookings_branch_time_window", "branch_id", "start_at", "end_at"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     car_wash_id: Mapped[int] = mapped_column(

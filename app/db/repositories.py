@@ -47,12 +47,16 @@ def count_overlapping_bookings_query(
     start_at: datetime,
     end_at: datetime,
 ) -> Select[tuple[int]]:
-    return select(func.count()).select_from(Booking).where(
-        Booking.car_wash_id == car_wash_id,
-        Booking.branch_id == branch_id,
-        Booking.status.in_(ACTIVE_CAPACITY_STATUSES),
-        Booking.start_at < end_at,
-        Booking.end_at > start_at,
+    return (
+        select(func.count())
+        .select_from(Booking)
+        .where(
+            Booking.car_wash_id == car_wash_id,
+            Booking.branch_id == branch_id,
+            Booking.status.in_(ACTIVE_CAPACITY_STATUSES),
+            Booking.start_at < end_at,
+            Booking.end_at > start_at,
+        )
     )
 
 
