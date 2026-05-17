@@ -1,3 +1,4 @@
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -7,6 +8,10 @@ from app.db import models  # noqa: F401
 from app.db.base import Base
 
 config = context.config
+database_url = os.environ.get("DATABASE_URL", "sqlite:///./washbot_dev.db")
+if database_url.startswith("postgresql+asyncpg://"):
+    database_url = database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+config.set_main_option("sqlalchemy.url", database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

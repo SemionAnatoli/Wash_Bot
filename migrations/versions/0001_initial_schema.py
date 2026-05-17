@@ -7,8 +7,8 @@ Create Date: 2026-05-17
 
 from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision: str = "0001_initial_schema"
 down_revision: str | None = None
@@ -37,7 +37,7 @@ def upgrade() -> None:
     op.create_table(
         "users",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("telegram_id", sa.Integer(), nullable=False),
+        sa.Column("telegram_id", sa.BigInteger(), nullable=False),
         sa.Column("username", sa.String(length=120), nullable=True),
         sa.UniqueConstraint("telegram_id"),
     )
@@ -96,6 +96,11 @@ def upgrade() -> None:
     )
     op.create_index("ix_blocked_slots_car_wash_id", "blocked_slots", ["car_wash_id"])
     op.create_index("ix_blocked_slots_branch_id", "blocked_slots", ["branch_id"])
+    op.create_index(
+        "ix_blocked_slots_branch_time_window",
+        "blocked_slots",
+        ["branch_id", "start_at", "end_at"],
+    )
     op.create_table(
         "bookings",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -109,6 +114,11 @@ def upgrade() -> None:
     )
     op.create_index("ix_bookings_car_wash_id", "bookings", ["car_wash_id"])
     op.create_index("ix_bookings_branch_id", "bookings", ["branch_id"])
+    op.create_index(
+        "ix_bookings_branch_time_window",
+        "bookings",
+        ["branch_id", "start_at", "end_at"],
+    )
     op.create_index("ix_bookings_start_at", "bookings", ["start_at"])
     op.create_index("ix_bookings_end_at", "bookings", ["end_at"])
     op.create_table(
@@ -141,9 +151,11 @@ def downgrade() -> None:
     op.drop_table("booking_services")
     op.drop_index("ix_bookings_end_at", table_name="bookings")
     op.drop_index("ix_bookings_start_at", table_name="bookings")
+    op.drop_index("ix_bookings_branch_time_window", table_name="bookings")
     op.drop_index("ix_bookings_branch_id", table_name="bookings")
     op.drop_index("ix_bookings_car_wash_id", table_name="bookings")
     op.drop_table("bookings")
+    op.drop_index("ix_blocked_slots_branch_time_window", table_name="blocked_slots")
     op.drop_index("ix_blocked_slots_branch_id", table_name="blocked_slots")
     op.drop_index("ix_blocked_slots_car_wash_id", table_name="blocked_slots")
     op.drop_table("blocked_slots")
