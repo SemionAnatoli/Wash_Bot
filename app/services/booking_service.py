@@ -25,19 +25,25 @@ class CreateBookingCommand:
 
 @dataclass(frozen=True, slots=True)
 class BookingCapacity:
+    """Capacity snapshot for a candidate interval.
+
+    peak_occupied_bays is the peak concurrent occupied bay count within the
+    candidate interval, not the number of overlapping booking rows.
+    """
+
     bay_count: int
-    overlapping_bookings: int
+    peak_occupied_bays: int
     overlapping_blocks: int
 
 
 def ensure_booking_can_be_created(capacity: BookingCapacity) -> None:
     if capacity.bay_count <= 0:
         raise ValidationError("Branch must have at least one bay.")
-    if capacity.overlapping_bookings < 0:
-        raise ValidationError("Overlapping booking count cannot be negative.")
+    if capacity.peak_occupied_bays < 0:
+        raise ValidationError("Peak occupied bay count cannot be negative.")
     if capacity.overlapping_blocks < 0:
         raise ValidationError("Overlapping block count cannot be negative.")
     if capacity.overlapping_blocks > 0:
         raise DomainError("Cannot create booking during blocked time.")
-    if capacity.overlapping_bookings >= capacity.bay_count:
+    if capacity.peak_occupied_bays >= capacity.bay_count:
         raise DomainError("Cannot create booking because capacity is full.")

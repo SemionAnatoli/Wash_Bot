@@ -45,7 +45,7 @@ def test_create_booking_command_rejects_non_positive_duration() -> None:
 def test_ensure_booking_can_be_created_allows_remaining_capacity() -> None:
     capacity = BookingCapacity(
         bay_count=2,
-        overlapping_bookings=1,
+        peak_occupied_bays=1,
         overlapping_blocks=0,
     )
 
@@ -58,7 +58,7 @@ def test_ensure_booking_can_be_created_rejects_non_positive_bay_count(
 ) -> None:
     capacity = BookingCapacity(
         bay_count=bay_count,
-        overlapping_bookings=0,
+        peak_occupied_bays=0,
         overlapping_blocks=0,
     )
 
@@ -66,10 +66,10 @@ def test_ensure_booking_can_be_created_rejects_non_positive_bay_count(
         ensure_booking_can_be_created(capacity)
 
 
-def test_ensure_booking_can_be_created_rejects_negative_overlapping_bookings() -> None:
+def test_ensure_booking_can_be_created_rejects_negative_peak_occupied_bays() -> None:
     capacity = BookingCapacity(
         bay_count=2,
-        overlapping_bookings=-1,
+        peak_occupied_bays=-1,
         overlapping_blocks=0,
     )
 
@@ -80,7 +80,7 @@ def test_ensure_booking_can_be_created_rejects_negative_overlapping_bookings() -
 def test_ensure_booking_can_be_created_rejects_negative_overlapping_blocks() -> None:
     capacity = BookingCapacity(
         bay_count=2,
-        overlapping_bookings=0,
+        peak_occupied_bays=0,
         overlapping_blocks=-1,
     )
 
@@ -91,7 +91,7 @@ def test_ensure_booking_can_be_created_rejects_negative_overlapping_blocks() -> 
 def test_ensure_booking_can_be_created_rejects_full_capacity() -> None:
     capacity = BookingCapacity(
         bay_count=2,
-        overlapping_bookings=2,
+        peak_occupied_bays=2,
         overlapping_blocks=0,
     )
 
@@ -102,7 +102,7 @@ def test_ensure_booking_can_be_created_rejects_full_capacity() -> None:
 def test_ensure_booking_can_be_created_rejects_blocked_time() -> None:
     capacity = BookingCapacity(
         bay_count=2,
-        overlapping_bookings=0,
+        peak_occupied_bays=0,
         overlapping_blocks=1,
     )
 
