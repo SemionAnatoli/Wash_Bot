@@ -23,16 +23,6 @@ def _markup(rows: list[list[InlineKeyboardButton]]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def _service_button_text(service: ServiceOption) -> str:
-    return (
-        service_line(service)
-        .replace("вЂ”", "—")
-        .replace("СЂСѓР±.", "руб.")
-        .replace("РјРёРЅ", "мин")
-        .replace("С‡", "ч")
-    )
-
-
 def booking_entry_keyboard() -> InlineKeyboardMarkup:
     return _markup(
         [
@@ -51,7 +41,7 @@ def main_services_keyboard(services: Iterable[ServiceOption]) -> InlineKeyboardM
         [
             [
                 InlineKeyboardButton(
-                    text=_service_button_text(service),
+                    text=service_line(service),
                     callback_data=build_main_service_callback(service.id),
                 )
             ]
@@ -69,10 +59,7 @@ def addons_keyboard(
     rows = [
         [
             InlineKeyboardButton(
-                text=(
-                    f"{'✓ ' if addon.id in selected_ids else ''}"
-                    f"{_service_button_text(addon)}"
-                ),
+                text=f"{'✓ ' if addon.id in selected_ids else ''}{service_line(addon)}",
                 callback_data=build_addon_callback(addon.id),
             )
         ]
