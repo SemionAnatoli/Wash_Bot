@@ -39,6 +39,10 @@ python_version = "3.12"
 strict = true
 packages = ["app"]
 
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["migrations*", "tests*"]
+
 [build-system]
 requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
