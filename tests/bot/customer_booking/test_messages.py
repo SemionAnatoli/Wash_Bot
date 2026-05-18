@@ -31,7 +31,9 @@ def option(
 def test_format_money_and_duration() -> None:
     assert format_money(Decimal("900")) == "900 руб."
     assert format_money(Decimal("900.50")) == "900.50 руб."
+    assert format_duration(0) == "0 мин"
     assert format_duration(30) == "30 мин"
+    assert format_duration(60) == "1 ч"
     assert format_duration(90) == "1 ч 30 мин"
 
 

@@ -3,7 +3,6 @@ from decimal import Decimal
 
 from app.services.customer_booking import ServiceOption
 
-
 START_TEXT = "Здравствуйте! Помогу записаться на автомойку."
 CHOOSE_SERVICE_TEXT = "Выберите основную услугу:"
 CHOOSE_ADDONS_TEXT = "Выберите дополнительные услуги:"
@@ -42,7 +41,10 @@ def format_duration(duration_minutes: int) -> str:
 
 
 def service_line(service: ServiceOption) -> str:
-    return f"{service.title} — {format_money(service.price)}, {format_duration(service.duration_minutes)}"
+    return (
+        f"{service.title} — {format_money(service.price)}, "
+        f"{format_duration(service.duration_minutes)}"
+    )
 
 
 def format_booking_summary(
@@ -57,7 +59,9 @@ def format_booking_summary(
     services = [main_service, *addons]
     total_price = sum((service.price for service in services), start=Decimal("0"))
     total_duration = sum(service.duration_minutes for service in services)
-    addon_lines = "\n".join(f"- {service_line(addon)}" for addon in addons) or "Без дополнительных услуг"
+    addon_lines = (
+        "\n".join(f"- {service_line(addon)}" for addon in addons) or "Без дополнительных услуг"
+    )
 
     return (
         "Проверьте данные записи:\n"
