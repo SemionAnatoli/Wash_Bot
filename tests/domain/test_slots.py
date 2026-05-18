@@ -2,7 +2,12 @@ from datetime import datetime, time, timedelta
 
 import pytest
 
-from app.domain.slots import BlockedInterval, BookingInterval, generate_available_slots
+from app.domain.slots import (
+    BlockedInterval,
+    BookingInterval,
+    calculate_peak_occupancy,
+    generate_available_slots,
+)
 
 
 def dt(hour: int, minute: int = 0) -> datetime:
@@ -73,6 +78,32 @@ def test_slot_capacity_blocks_when_peak_occupancy_reaches_bay_count() -> None:
     )
 
     assert dt(10) not in slots
+
+
+def test_calculate_peak_occupancy_counts_sequential_bookings_as_one_peak() -> None:
+    peak = calculate_peak_occupancy(
+        start=dt(10),
+        end=dt(12),
+        bookings=[
+            BookingInterval(start=dt(10), end=dt(11)),
+            BookingInterval(start=dt(11), end=dt(12)),
+        ],
+    )
+
+    assert peak == 1
+
+
+def test_calculate_peak_occupancy_counts_concurrent_bookings_as_two_peak() -> None:
+    peak = calculate_peak_occupancy(
+        start=dt(10),
+        end=dt(12),
+        bookings=[
+            BookingInterval(start=dt(10), end=dt(12)),
+            BookingInterval(start=dt(10, 30), end=dt(11, 30)),
+        ],
+    )
+
+    assert peak == 2
 
 
 def test_slot_is_hidden_when_it_does_not_fit_working_hours() -> None:
