@@ -58,6 +58,15 @@ def _fits_capacity(
     bay_count: int,
     bookings: list[BookingInterval],
 ) -> bool:
+    return calculate_peak_occupancy(start=start, end=end, bookings=bookings) < bay_count
+
+
+def calculate_peak_occupancy(
+    *,
+    start: datetime,
+    end: datetime,
+    bookings: list[BookingInterval],
+) -> int:
     events: list[tuple[datetime, int]] = []
     for booking in bookings:
         if not intervals_overlap(start, end, booking.start, booking.end):
@@ -77,7 +86,7 @@ def _fits_capacity(
         occupied += delta
         peak_occupied = max(peak_occupied, occupied)
 
-    return peak_occupied < bay_count
+    return peak_occupied
 
 
 def _not_blocked(start: datetime, end: datetime, blocked: list[BlockedInterval]) -> bool:
