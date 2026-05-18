@@ -1,9 +1,19 @@
 from datetime import date, datetime, time
 from decimal import Decimal
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Booking, Branch, CarWash, Service, WorkingHours
+from app.db.models import (
+    Booking,
+    BookingService,
+    Branch,
+    CarWash,
+    Customer,
+    NotificationJob,
+    Service,
+    WorkingHours,
+)
 from app.services.customer_booking import CustomerBookingService
 
 
@@ -103,3 +113,58 @@ async def test_get_available_slots_uses_services_working_hours_and_capacity(
     )
 
     assert slots == [datetime(2026, 5, 18, 10)]
+
+
+async def test_create_booking_persists_customer_booking_services_and_reminder(
+    db_session: AsyncSession,
+) -> None:
+    car_wash = CarWash(name="Wash", confirmation_mode="auto", reminder_before_minutes=60)
+    db_session.add(car_wash)
+    await db_session.flush()
+    branch = Branch(car_wash_id=car_wash.id, title="Main", address="Street", bay_count=1)
+    db_session.add(branch)
+    await db_session.flush()
+    main_service = Service(
+        car_wash_id=car_wash.id,
+        title="Standard",
+        category="wash",
+        price=Decimal("900"),
+        duration_minutes=60,
+        is_addon=False,
+        is_active=True,
+    )
+    db_session.add(main_service)
+    await db_session.flush()
+    db_session.add(
+        WorkingHours(
+            car_wash_id=car_wash.id,
+            branch_id=branch.id,
+            weekday=0,
+            start_time=time(10),
+            end_time=time(12),
+        )
+    )
+    await db_session.commit()
+
+    booking = await CustomerBookingService(db_session).create_booking(
+        car_wash_id=car_wash.id,
+        branch_id=branch.id,
+        selected_service_ids=[main_service.id],
+        start_at=datetime(2026, 5, 18, 10),
+        customer_name=" Ivan ",
+        customer_phone="8 (913) 123-45-67",
+        vehicle_plate="a123bc154",
+    )
+
+    customers = (await db_session.execute(select(Customer))).scalars().all()
+    booking_services = (await db_session.execute(select(BookingService))).scalars().all()
+    jobs = (await db_session.execute(select(NotificationJob))).scalars().all()
+
+    assert booking.status == "confirmed"
+    assert booking.end_at == datetime(2026, 5, 18, 11)
+    assert customers[0].name == "Ivan"
+    assert customers[0].phone == "+79131234567"
+    assert customers[0].vehicle_plate == "A123BC154"
+    assert len(booking_services) == 1
+    assert jobs[0].kind == "booking_reminder"
+    assert jobs[0].run_at == datetime(2026, 5, 18, 9)

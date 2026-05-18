@@ -5,14 +5,18 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import repositories
-from app.db.models import Service
+from app.db.models import Booking, Service
 from app.domain.errors import DomainError
 from app.domain.services import SelectedService, calculate_total_duration
 from app.domain.slots import (
     BlockedInterval,
     BookingInterval,
+    calculate_peak_occupancy,
     generate_available_slots,
 )
+from app.domain.statuses import BookingStatus
+from app.domain.validation import normalize_name, normalize_phone, normalize_vehicle_plate
+from app.services.booking_service import BookingCapacity, ensure_booking_can_be_created
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,3 +150,114 @@ class CustomerBookingService:
                 for blocked in blocks
             ],
         )
+
+    async def create_booking(
+        self,
+        *,
+        car_wash_id: int,
+        branch_id: int,
+        selected_service_ids: list[int],
+        start_at: datetime,
+        customer_name: str,
+        customer_phone: str,
+        vehicle_plate: str,
+    ) -> Booking:
+        car_wash = await repositories.get_car_wash(self._session, car_wash_id=car_wash_id)
+        if car_wash is None:
+            raise DomainError("Car wash was not found.")
+
+        branch = await repositories.get_branch(
+            self._session,
+            car_wash_id=car_wash_id,
+            branch_id=branch_id,
+        )
+        if branch is None:
+            raise DomainError("Branch was not found.")
+
+        services = await repositories.list_services_by_ids(
+            self._session,
+            car_wash_id=car_wash_id,
+            service_ids=selected_service_ids,
+        )
+        if len(services) != len(set(selected_service_ids)):
+            raise DomainError("One or more services were not found.")
+
+        main_services = [service for service in services if not service.is_addon]
+        addons = [service for service in services if service.is_addon]
+        if len(main_services) != 1:
+            raise DomainError("Exactly one main service is required.")
+
+        duration = calculate_total_duration(
+            _selected_service_from_model(main_services[0]),
+            [_selected_service_from_model(service) for service in addons],
+        )
+        end_at = start_at + timedelta(minutes=duration)
+
+        block_result = await self._session.execute(
+            repositories.overlapping_blocks_query(
+                car_wash_id=car_wash_id,
+                branch_id=branch_id,
+                start_at=start_at,
+                end_at=end_at,
+            )
+        )
+        overlapping_blocks = len(block_result.scalars().all())
+        booking_intervals = await repositories.list_overlapping_booking_intervals(
+            self._session,
+            car_wash_id=car_wash_id,
+            branch_id=branch_id,
+            start_at=start_at,
+            end_at=end_at,
+        )
+        peak_occupied_bays = calculate_peak_occupancy(
+            start=start_at,
+            end=end_at,
+            bookings=[
+                BookingInterval(start=interval_start, end=interval_end)
+                for interval_start, interval_end in booking_intervals
+            ],
+        )
+        ensure_booking_can_be_created(
+            BookingCapacity(
+                bay_count=branch.bay_count,
+                peak_occupied_bays=peak_occupied_bays,
+                overlapping_blocks=overlapping_blocks,
+            )
+        )
+
+        customer = await repositories.create_customer(
+            self._session,
+            car_wash_id=car_wash_id,
+            name=normalize_name(customer_name),
+            phone=normalize_phone(customer_phone),
+            vehicle_plate=normalize_vehicle_plate(vehicle_plate),
+        )
+        status = (
+            BookingStatus.CONFIRMED
+            if car_wash.confirmation_mode == "auto"
+            else BookingStatus.PENDING
+        )
+        booking = await repositories.create_booking_record(
+            self._session,
+            car_wash_id=car_wash_id,
+            branch_id=branch_id,
+            customer_id=customer.id,
+            start_at=start_at,
+            end_at=end_at,
+            status=status.value,
+        )
+        await repositories.add_booking_services(
+            self._session,
+            booking_id=booking.id,
+            main_service_id=main_services[0].id,
+            addon_service_ids=[service.id for service in addons],
+        )
+        await repositories.create_notification_job(
+            self._session,
+            car_wash_id=car_wash_id,
+            booking_id=booking.id,
+            kind="booking_reminder",
+            run_at=start_at - timedelta(minutes=car_wash.reminder_before_minutes),
+        )
+        await self._session.commit()
+        return booking
