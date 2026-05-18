@@ -9,3 +9,5 @@ class Settings(BaseSettings):
     database_url: AnyUrl
     telegram_bot_token: SecretStr
     default_reminder_before_minutes: int = Field(default=60, ge=0, le=1440)
+    default_car_wash_id: int = Field(default=1, ge=1)
+    default_branch_id: int = Field(default=1, ge=1)
