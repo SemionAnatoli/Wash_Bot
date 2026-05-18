@@ -146,8 +146,7 @@ class CustomerBookingService:
                 for start_at, end_at in booking_intervals
             ],
             blocked=[
-                BlockedInterval(start=blocked.start_at, end=blocked.end_at)
-                for blocked in blocks
+                BlockedInterval(start=blocked.start_at, end=blocked.end_at) for blocked in blocks
             ],
         )
 

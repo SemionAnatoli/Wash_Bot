@@ -6,13 +6,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import (
     BlockedSlot,
     Booking,
-    BookingService as BookingServiceModel,
     Branch,
     CarWash,
     Customer,
     NotificationJob,
     Service,
     WorkingHours,
+)
+from app.db.models import (
+    BookingService as BookingServiceModel,
 )
 from app.domain.statuses import BookingStatus
 
@@ -250,7 +252,13 @@ async def add_booking_services(
     main_service_id: int,
     addon_service_ids: list[int],
 ) -> None:
-    session.add(BookingServiceModel(booking_id=booking_id, service_id=main_service_id, is_main=True))
+    session.add(
+        BookingServiceModel(
+            booking_id=booking_id,
+            service_id=main_service_id,
+            is_main=True,
+        )
+    )
     session.add_all(
         [
             BookingServiceModel(booking_id=booking_id, service_id=service_id, is_main=False)
