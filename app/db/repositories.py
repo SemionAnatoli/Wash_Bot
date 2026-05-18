@@ -163,3 +163,24 @@ async def get_working_hours_for_weekday(
         )
     )
     return result.scalar_one_or_none()
+
+
+async def list_services_by_ids(
+    session: AsyncSession,
+    *,
+    car_wash_id: int,
+    service_ids: list[int],
+) -> list[Service]:
+    if not service_ids:
+        return []
+
+    result = await session.execute(
+        select(Service)
+        .where(
+            Service.car_wash_id == car_wash_id,
+            Service.id.in_(set(service_ids)),
+            Service.is_active.is_(True),
+        )
+        .order_by(Service.id)
+    )
+    return list(result.scalars().all())
