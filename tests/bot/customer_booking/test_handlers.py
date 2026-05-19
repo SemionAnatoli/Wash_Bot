@@ -20,8 +20,10 @@ from app.bot.customer_booking.handlers import (
 from app.bot.customer_booking.messages import (
     NO_SERVICES_TEXT,
     SELECTED_SERVICES_UNAVAILABLE_TEXT,
+    SLOT_STALE_TEXT,
 )
 from app.bot.customer_booking.states import CustomerBookingFlow
+from app.domain.errors import DomainError
 from app.services.customer_booking import ServiceMenu
 from tests.bot.customer_booking.fakes import (
     FakeCallbackQuery,
@@ -295,6 +297,32 @@ async def test_booking_confirmation_creates_booking_and_clears_state() -> None:
     }
     assert "подтверждена" in first_text(callback.message).lower()
     assert state.cleared is True
+
+
+async def test_booking_confirmation_handles_stale_slot() -> None:
+    service = FakeCustomerBookingService(create_error=DomainError("Capacity is full."))
+    state = FakeState(
+        data={
+            "car_wash_id": 10,
+            "branch_id": 20,
+            "main_service_id": 1,
+            "addon_service_ids": [],
+            "start_at": "2026-05-18T10:00:00",
+            "customer_name": "Иван",
+            "customer_phone": "+79131234567",
+            "vehicle_plate": "A123BC154",
+        }
+    )
+    callback = FakeCallbackQuery(data="book:confirm")
+
+    await handle_booking_confirmed(callback, state, customer_booking_service=service)
+
+    assert first_text(callback.message) == SLOT_STALE_TEXT
+    assert callback.message.answers[0]["reply_markup"].inline_keyboard[0][0].callback_data == (
+        "book:confirm"
+    )
+    assert state.state == CustomerBookingFlow.confirming
+    assert state.cleared is False
 
 
 async def test_change_time_returns_to_date_selection() -> None:

@@ -40,11 +40,12 @@ from app.bot.customer_booking.messages import (
     NO_SLOTS_TEXT,
     PENDING_TEXT,
     SELECTED_SERVICES_UNAVAILABLE_TEXT,
+    SLOT_STALE_TEXT,
     START_TEXT,
     format_booking_summary,
 )
 from app.bot.customer_booking.states import CustomerBookingFlow
-from app.domain.errors import ValidationError
+from app.domain.errors import DomainError, ValidationError
 from app.domain.validation import normalize_name, normalize_phone, normalize_vehicle_plate
 from app.services.customer_booking import CustomerBookingService, ServiceMenu, ServiceOption
 
@@ -311,15 +312,24 @@ async def handle_booking_confirmed(
     await callback.answer()
 
     data = await state.get_data()
-    booking = await customer_booking_service.create_booking(
-        car_wash_id=int(data["car_wash_id"]),
-        branch_id=int(data["branch_id"]),
-        selected_service_ids=_selected_service_ids(data),
-        start_at=datetime.fromisoformat(data["start_at"]),
-        customer_name=str(data["customer_name"]),
-        customer_phone=str(data["customer_phone"]),
-        vehicle_plate=str(data["vehicle_plate"]),
-    )
+    try:
+        booking = await customer_booking_service.create_booking(
+            car_wash_id=int(data["car_wash_id"]),
+            branch_id=int(data["branch_id"]),
+            selected_service_ids=_selected_service_ids(data),
+            start_at=datetime.fromisoformat(data["start_at"]),
+            customer_name=str(data["customer_name"]),
+            customer_phone=str(data["customer_phone"]),
+            vehicle_plate=str(data["vehicle_plate"]),
+        )
+    except DomainError:
+        await state.set_state(CustomerBookingFlow.confirming)
+        await _callback_message(callback).answer(
+            SLOT_STALE_TEXT,
+            reply_markup=confirmation_keyboard(),
+        )
+        return
+
     await state.clear()
     text = CONFIRMED_TEXT if booking.status == "confirmed" else PENDING_TEXT
     await _callback_message(callback).answer(text)

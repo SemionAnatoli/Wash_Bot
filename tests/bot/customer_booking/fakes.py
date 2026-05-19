@@ -73,6 +73,7 @@ class FakeCustomerBookingService:
     requested_slots: list[dict[str, Any]] = field(default_factory=list)
     created_bookings: list[dict[str, Any]] = field(default_factory=list)
     booking_status: str = "confirmed"
+    create_error: Exception | None = None
 
     async def get_service_menu(self, *, car_wash_id: int) -> ServiceMenu:
         self.requested_menus.append({"car_wash_id": car_wash_id})
@@ -107,6 +108,9 @@ class FakeCustomerBookingService:
         customer_phone: str,
         vehicle_plate: str,
     ) -> Any:
+        if self.create_error is not None:
+            raise self.create_error
+
         self.created_bookings.append(
             {
                 "car_wash_id": car_wash_id,
