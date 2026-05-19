@@ -37,6 +37,9 @@ class FakeState:
     async def update_data(self, **kwargs: Any) -> None:
         self.data.update(kwargs)
 
+    async def set_data(self, data: dict[str, Any]) -> None:
+        self.data = data
+
     async def get_data(self) -> dict[str, Any]:
         return dict(self.data)
 
@@ -66,9 +69,11 @@ class FakeCustomerBookingService:
         )
     )
     slots: list[datetime] = field(default_factory=lambda: [datetime(2026, 5, 18, 10)])
+    requested_menus: list[dict[str, Any]] = field(default_factory=list)
     requested_slots: list[dict[str, Any]] = field(default_factory=list)
 
     async def get_service_menu(self, *, car_wash_id: int) -> ServiceMenu:
+        self.requested_menus.append({"car_wash_id": car_wash_id})
         return self.menu
 
     async def get_available_slots(
