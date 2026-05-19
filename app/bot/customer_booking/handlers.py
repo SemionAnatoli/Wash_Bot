@@ -72,12 +72,12 @@ async def handle_booking_start(
         branch_id=default_branch_id,
         service_menu=service_menu,
     )
-    await state.set_state(CustomerBookingFlow.choosing_main_service)
 
     if not service_menu.main_services:
         await _callback_message(callback).answer(NO_SERVICES_TEXT)
         return
 
+    await state.set_state(CustomerBookingFlow.choosing_main_service)
     await _callback_message(callback).answer(
         CHOOSE_SERVICE_TEXT,
         reply_markup=main_services_keyboard(service_menu.main_services),
@@ -145,13 +145,17 @@ async def handle_date_selected(
         selected_service_ids=selected_service_ids,
         day=selected_day,
     )
-    await state.update_data(selected_date=selected_day, available_slots=slots)
-    await state.set_state(CustomerBookingFlow.choosing_slot)
+    await state.update_data(selected_date=selected_day.isoformat(), available_slots=slots)
 
     if not slots:
-        await _callback_message(callback).answer(NO_SLOTS_TEXT)
+        await state.set_state(CustomerBookingFlow.choosing_date)
+        await _callback_message(callback).answer(
+            NO_SLOTS_TEXT,
+            reply_markup=date_keyboard(_next_dates(selected_day)),
+        )
         return
 
+    await state.set_state(CustomerBookingFlow.choosing_slot)
     await _callback_message(callback).answer(
         CHOOSE_SLOT_TEXT,
         reply_markup=slots_keyboard(slots),
