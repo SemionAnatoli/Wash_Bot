@@ -71,6 +71,24 @@ async def test_booking_start_without_services_does_not_enter_service_state() -> 
     assert first_text(callback.message) == NO_SERVICES_TEXT
 
 
+async def test_booking_start_without_services_clears_existing_flow_state() -> None:
+    callback = FakeCallbackQuery(data="book:start")
+    state = FakeState(data={"main_service_id": 1}, state=CustomerBookingFlow.choosing_date)
+    service = FakeCustomerBookingService(menu=ServiceMenu(main_services=[], addons=[]))
+
+    await handle_booking_start(
+        callback,
+        state,
+        customer_booking_service=service,
+        default_car_wash_id=10,
+        default_branch_id=20,
+    )
+
+    assert state.cleared is True
+    assert state.state is None
+    assert first_text(callback.message) == NO_SERVICES_TEXT
+
+
 async def test_main_service_selection_stores_service_and_shows_addons() -> None:
     callback = FakeCallbackQuery(data="book:main:1")
     state = FakeState(data={"car_wash_id": 10})

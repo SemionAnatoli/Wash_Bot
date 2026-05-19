@@ -88,6 +88,7 @@ async def handle_booking_start(
     )
 
     if not service_menu.main_services:
+        await state.clear()
         await _callback_message(callback).answer(NO_SERVICES_TEXT)
         return
 
