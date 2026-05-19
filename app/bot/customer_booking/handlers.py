@@ -36,6 +36,7 @@ from app.bot.customer_booking.messages import (
     NO_SERVICES_TEXT,
     NO_SLOTS_TEXT,
     PENDING_TEXT,
+    SELECTED_SERVICES_UNAVAILABLE_TEXT,
     START_TEXT,
     format_booking_summary,
 )
@@ -277,7 +278,13 @@ async def handle_vehicle_plate_received(
     await _update_allowed_data(state, vehicle_plate=vehicle_plate)
     data = await state.get_data()
     menu = await customer_booking_service.get_service_menu(car_wash_id=int(data["car_wash_id"]))
-    main_service, addons = _selected_options(data, menu)
+    try:
+        main_service, addons = _selected_options(data, menu)
+    except ValueError:
+        await state.clear()
+        await message.answer(SELECTED_SERVICES_UNAVAILABLE_TEXT)
+        return
+
     await state.set_state(CustomerBookingFlow.confirming)
     await message.answer(
         format_booking_summary(

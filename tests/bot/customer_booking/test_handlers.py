@@ -14,7 +14,10 @@ from app.bot.customer_booking.handlers import (
     handle_vehicle_plate_received,
     router,
 )
-from app.bot.customer_booking.messages import NO_SERVICES_TEXT
+from app.bot.customer_booking.messages import (
+    NO_SERVICES_TEXT,
+    SELECTED_SERVICES_UNAVAILABLE_TEXT,
+)
 from app.bot.customer_booking.states import CustomerBookingFlow
 from app.services.customer_booking import ServiceMenu
 from tests.bot.customer_booking.fakes import (
@@ -233,6 +236,33 @@ async def test_customer_input_reaches_confirmation_summary() -> None:
     assert "Проверьте" in first_text(plate_message)
 
 
+async def test_unavailable_selected_service_clears_state_and_shows_recovery_message() -> None:
+    service = FakeCustomerBookingService()
+    state = FakeState(
+        data={
+            "car_wash_id": 10,
+            "main_service_id": 999,
+            "addon_service_ids": [],
+            "start_at": "2026-05-18T10:00:00",
+            "customer_name": "Иван",
+            "customer_phone": "+79131234567",
+        }
+    )
+    plate_message = FakeMessage(text="a123bc154")
+
+    await handle_vehicle_plate_received(
+        plate_message,
+        state,
+        customer_booking_service=service,
+    )
+
+    assert state.cleared is True
+    assert state.data == {}
+    assert first_text(plate_message) == SELECTED_SERVICES_UNAVAILABLE_TEXT
+    assert "Проверьте" not in first_text(plate_message)
+    assert len(plate_message.answers) == 1
+
+
 async def test_booking_confirmation_creates_booking_and_clears_state() -> None:
     service = FakeCustomerBookingService()
     state = FakeState(
@@ -251,8 +281,15 @@ async def test_booking_confirmation_creates_booking_and_clears_state() -> None:
 
     await handle_booking_confirmed(callback, state, customer_booking_service=service)
 
-    assert service.created_bookings[0]["selected_service_ids"] == [1, 2]
-    assert service.created_bookings[0]["start_at"] == datetime(2026, 5, 18, 10)
+    assert service.created_bookings[0] == {
+        "car_wash_id": 10,
+        "branch_id": 20,
+        "selected_service_ids": [1, 2],
+        "start_at": datetime(2026, 5, 18, 10),
+        "customer_name": "Иван",
+        "customer_phone": "+79131234567",
+        "vehicle_plate": "A123BC154",
+    }
     assert "подтверждена" in first_text(callback.message).lower()
     assert state.cleared is True
 

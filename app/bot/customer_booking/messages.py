@@ -19,6 +19,7 @@ SLOT_STALE_TEXT = "Это время уже недоступно. Выберит
 GENERIC_ERROR_TEXT = "Что-то пошло не так. Попробуйте позже."
 CONFIRMED_TEXT = "Запись подтверждена."
 PENDING_TEXT = "Заявка на запись отправлена и ожидает подтверждения."
+SELECTED_SERVICES_UNAVAILABLE_TEXT = "Выбранные услуги больше недоступны. Начните запись заново."
 
 
 def format_money(amount: Decimal) -> str:
