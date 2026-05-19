@@ -1,12 +1,17 @@
-from datetime import date
+from datetime import date, datetime
 
 from app.bot.customer_booking.handlers import (
     handle_addon_selected,
     handle_addons_done,
+    handle_booking_confirmed,
     handle_booking_start,
     handle_date_selected,
     handle_main_service_selected,
+    handle_name_received,
+    handle_phone_received,
+    handle_slot_selected,
     handle_start,
+    handle_vehicle_plate_received,
     router,
 )
 from app.bot.customer_booking.messages import NO_SERVICES_TEXT
@@ -178,6 +183,80 @@ async def test_date_selection_without_slots_keeps_date_selection_and_offers_date
     assert callback_data.startswith("book:date:")
 
 
+async def test_slot_selection_stores_start_and_asks_for_name() -> None:
+    callback = FakeCallbackQuery(data="book:slot:2026-05-18T10:00")
+    state = FakeState()
+
+    await handle_slot_selected(callback, state)
+
+    assert state.data["start_at"] == "2026-05-18T10:00:00"
+    assert state.state == CustomerBookingFlow.waiting_for_name
+    assert "имя" in first_text(callback.message).lower()
+
+
+async def test_invalid_phone_keeps_phone_state() -> None:
+    message = FakeMessage(text="123")
+    state = FakeState()
+
+    await handle_phone_received(message, state)
+
+    assert state.state == CustomerBookingFlow.waiting_for_phone
+    assert "номер телефона" in first_text(message).lower()
+
+
+async def test_customer_input_reaches_confirmation_summary() -> None:
+    service = FakeCustomerBookingService()
+    state = FakeState(
+        data={
+            "car_wash_id": 10,
+            "main_service_id": 1,
+            "addon_service_ids": [2],
+            "start_at": "2026-05-18T10:00:00",
+        }
+    )
+
+    await handle_name_received(FakeMessage(text=" Иван "), state)
+    await handle_phone_received(FakeMessage(text="8 (913) 123-45-67"), state)
+    plate_message = FakeMessage(text="a123bc154")
+    await handle_vehicle_plate_received(
+        plate_message,
+        state,
+        customer_booking_service=service,
+    )
+
+    assert service.requested_menus[-1] == {"car_wash_id": 10}
+    assert state.data["customer_name"] == "Иван"
+    assert state.data["customer_phone"] == "+79131234567"
+    assert state.data["vehicle_plate"] == "A123BC154"
+    assert "service_menu" not in state.data
+    assert state.state == CustomerBookingFlow.confirming
+    assert "Проверьте" in first_text(plate_message)
+
+
+async def test_booking_confirmation_creates_booking_and_clears_state() -> None:
+    service = FakeCustomerBookingService()
+    state = FakeState(
+        data={
+            "car_wash_id": 10,
+            "branch_id": 20,
+            "main_service_id": 1,
+            "addon_service_ids": [2],
+            "start_at": "2026-05-18T10:00:00",
+            "customer_name": "Иван",
+            "customer_phone": "+79131234567",
+            "vehicle_plate": "A123BC154",
+        }
+    )
+    callback = FakeCallbackQuery(data="book:confirm")
+
+    await handle_booking_confirmed(callback, state, customer_booking_service=service)
+
+    assert service.created_bookings[0]["selected_service_ids"] == [1, 2]
+    assert service.created_bookings[0]["start_at"] == datetime(2026, 5, 18, 10)
+    assert "подтверждена" in first_text(callback.message).lower()
+    assert state.cleared is True
+
+
 def test_booking_callback_handlers_are_state_scoped() -> None:
     callback_handlers = router.callback_query.handlers
 
@@ -187,3 +266,17 @@ def test_booking_callback_handlers_are_state_scoped() -> None:
     assert callback_handlers[2].filters[0].callback.states == (CustomerBookingFlow.choosing_addons,)
     assert callback_handlers[3].filters[0].callback.states == (CustomerBookingFlow.choosing_addons,)
     assert callback_handlers[4].filters[0].callback.states == (CustomerBookingFlow.choosing_date,)
+    assert callback_handlers[5].filters[0].callback.states == (CustomerBookingFlow.choosing_slot,)
+    assert callback_handlers[6].filters[0].callback.states == (CustomerBookingFlow.confirming,)
+
+
+def test_booking_message_handlers_are_state_scoped() -> None:
+    message_handlers = router.message.handlers
+
+    assert message_handlers[1].filters[0].callback.states == (CustomerBookingFlow.waiting_for_name,)
+    assert message_handlers[2].filters[0].callback.states == (
+        CustomerBookingFlow.waiting_for_phone,
+    )
+    assert message_handlers[3].filters[0].callback.states == (
+        CustomerBookingFlow.waiting_for_vehicle_plate,
+    )

@@ -71,6 +71,8 @@ class FakeCustomerBookingService:
     slots: list[datetime] = field(default_factory=lambda: [datetime(2026, 5, 18, 10)])
     requested_menus: list[dict[str, Any]] = field(default_factory=list)
     requested_slots: list[dict[str, Any]] = field(default_factory=list)
+    created_bookings: list[dict[str, Any]] = field(default_factory=list)
+    booking_status: str = "confirmed"
 
     async def get_service_menu(self, *, car_wash_id: int) -> ServiceMenu:
         self.requested_menus.append({"car_wash_id": car_wash_id})
@@ -93,3 +95,27 @@ class FakeCustomerBookingService:
             }
         )
         return self.slots
+
+    async def create_booking(
+        self,
+        *,
+        car_wash_id: int,
+        branch_id: int,
+        selected_service_ids: list[int],
+        start_at: datetime,
+        customer_name: str,
+        customer_phone: str,
+        vehicle_plate: str,
+    ) -> Any:
+        self.created_bookings.append(
+            {
+                "car_wash_id": car_wash_id,
+                "branch_id": branch_id,
+                "selected_service_ids": selected_service_ids,
+                "start_at": start_at,
+                "customer_name": customer_name,
+                "customer_phone": customer_phone,
+                "vehicle_plate": vehicle_plate,
+            }
+        )
+        return type("BookingResult", (), {"status": self.booking_status})()
