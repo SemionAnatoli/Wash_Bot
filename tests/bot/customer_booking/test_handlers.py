@@ -5,6 +5,9 @@ from app.bot.customer_booking.handlers import (
     handle_addons_done,
     handle_booking_confirmed,
     handle_booking_start,
+    handle_cancel_flow,
+    handle_change_services,
+    handle_change_time,
     handle_date_selected,
     handle_main_service_selected,
     handle_name_received,
@@ -294,6 +297,41 @@ async def test_booking_confirmation_creates_booking_and_clears_state() -> None:
     assert state.cleared is True
 
 
+async def test_change_time_returns_to_date_selection() -> None:
+    callback = FakeCallbackQuery(data="book:change_time")
+    state = FakeState()
+
+    await handle_change_time(callback, state)
+
+    assert state.state == CustomerBookingFlow.choosing_date
+    assert "Выберите дату" in first_text(callback.message)
+
+
+async def test_change_services_returns_to_menu() -> None:
+    callback = FakeCallbackQuery(data="book:change_services")
+    state = FakeState(data={"car_wash_id": 10, "main_service_id": 1, "addon_service_ids": [2]})
+    service = FakeCustomerBookingService()
+
+    await handle_change_services(callback, state, customer_booking_service=service)
+
+    assert service.requested_menus[-1] == {"car_wash_id": 10}
+    assert state.state == CustomerBookingFlow.choosing_main_service
+    assert state.data["car_wash_id"] == 10
+    assert "main_service_id" not in state.data
+    assert "addon_service_ids" not in state.data
+    assert "Выберите услугу" in first_text(callback.message)
+
+
+async def test_cancel_flow_clears_state() -> None:
+    callback = FakeCallbackQuery(data="book:cancel_flow")
+    state = FakeState(data={"main_service_id": 1})
+
+    await handle_cancel_flow(callback, state)
+
+    assert state.cleared is True
+    assert "отменена" in first_text(callback.message).lower()
+
+
 def test_booking_callback_handlers_are_state_scoped() -> None:
     callback_handlers = router.callback_query.handlers
 
@@ -305,6 +343,18 @@ def test_booking_callback_handlers_are_state_scoped() -> None:
     assert callback_handlers[4].filters[0].callback.states == (CustomerBookingFlow.choosing_date,)
     assert callback_handlers[5].filters[0].callback.states == (CustomerBookingFlow.choosing_slot,)
     assert callback_handlers[6].filters[0].callback.states == (CustomerBookingFlow.confirming,)
+    assert callback_handlers[7].filters[0].callback.states == (CustomerBookingFlow.confirming,)
+    assert callback_handlers[8].filters[0].callback.states == (CustomerBookingFlow.confirming,)
+    assert callback_handlers[9].filters[0].callback.states == (
+        CustomerBookingFlow.choosing_main_service,
+        CustomerBookingFlow.choosing_addons,
+        CustomerBookingFlow.choosing_date,
+        CustomerBookingFlow.choosing_slot,
+        CustomerBookingFlow.waiting_for_name,
+        CustomerBookingFlow.waiting_for_phone,
+        CustomerBookingFlow.waiting_for_vehicle_plate,
+        CustomerBookingFlow.confirming,
+    )
 
 
 def test_booking_message_handlers_are_state_scoped() -> None:

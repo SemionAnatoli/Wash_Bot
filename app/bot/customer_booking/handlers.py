@@ -9,6 +9,9 @@ from aiogram.types import CallbackQuery, Message
 from app.bot.customer_booking.callbacks import (
     ADDONS_DONE_CALLBACK,
     BOOKING_START_CALLBACK,
+    CANCEL_FLOW_CALLBACK,
+    CHANGE_SERVICES_CALLBACK,
+    CHANGE_TIME_CALLBACK,
     CONFIRM_BOOKING_CALLBACK,
     parse_date_callback,
     parse_id_callback,
@@ -322,6 +325,42 @@ async def handle_booking_confirmed(
     await _callback_message(callback).answer(text)
 
 
+async def handle_change_time(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    await state.set_state(CustomerBookingFlow.choosing_date)
+    await _callback_message(callback).answer(
+        CHOOSE_DATE_TEXT,
+        reply_markup=date_keyboard(_next_dates()),
+    )
+
+
+async def handle_change_services(
+    callback: CallbackQuery,
+    state: FSMContext,
+    *,
+    customer_booking_service: CustomerBookingService,
+) -> None:
+    await callback.answer()
+    data = await state.get_data()
+    car_wash_id = int(data["car_wash_id"])
+    service_menu = await customer_booking_service.get_service_menu(car_wash_id=car_wash_id)
+    next_data = {"car_wash_id": car_wash_id}
+    if "branch_id" in data:
+        next_data["branch_id"] = int(data["branch_id"])
+    await state.set_data(next_data)
+    await state.set_state(CustomerBookingFlow.choosing_main_service)
+    await _callback_message(callback).answer(
+        CHOOSE_SERVICE_TEXT,
+        reply_markup=main_services_keyboard(service_menu.main_services),
+    )
+
+
+async def handle_cancel_flow(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    await state.clear()
+    await _callback_message(callback).answer("Запись отменена.")
+
+
 router.message.register(handle_start, CommandStart())
 router.callback_query.register(handle_booking_start, F.data == BOOKING_START_CALLBACK)
 router.callback_query.register(
@@ -359,4 +398,28 @@ router.callback_query.register(
     handle_booking_confirmed,
     StateFilter(CustomerBookingFlow.confirming),
     F.data == CONFIRM_BOOKING_CALLBACK,
+)
+router.callback_query.register(
+    handle_change_time,
+    StateFilter(CustomerBookingFlow.confirming),
+    F.data == CHANGE_TIME_CALLBACK,
+)
+router.callback_query.register(
+    handle_change_services,
+    StateFilter(CustomerBookingFlow.confirming),
+    F.data == CHANGE_SERVICES_CALLBACK,
+)
+router.callback_query.register(
+    handle_cancel_flow,
+    StateFilter(
+        CustomerBookingFlow.choosing_main_service,
+        CustomerBookingFlow.choosing_addons,
+        CustomerBookingFlow.choosing_date,
+        CustomerBookingFlow.choosing_slot,
+        CustomerBookingFlow.waiting_for_name,
+        CustomerBookingFlow.waiting_for_phone,
+        CustomerBookingFlow.waiting_for_vehicle_plate,
+        CustomerBookingFlow.confirming,
+    ),
+    F.data == CANCEL_FLOW_CALLBACK,
 )
