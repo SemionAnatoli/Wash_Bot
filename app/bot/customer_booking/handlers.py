@@ -45,7 +45,7 @@ from app.bot.customer_booking.messages import (
     format_booking_summary,
 )
 from app.bot.customer_booking.states import CustomerBookingFlow
-from app.domain.errors import DomainError, ValidationError
+from app.domain.errors import BookingSlotUnavailableError, ValidationError
 from app.domain.validation import normalize_name, normalize_phone, normalize_vehicle_plate
 from app.services.customer_booking import CustomerBookingService, ServiceMenu, ServiceOption
 
@@ -322,7 +322,7 @@ async def handle_booking_confirmed(
             customer_phone=str(data["customer_phone"]),
             vehicle_plate=str(data["vehicle_plate"]),
         )
-    except DomainError:
+    except BookingSlotUnavailableError:
         await state.set_state(CustomerBookingFlow.confirming)
         await _callback_message(callback).answer(
             SLOT_STALE_TEXT,

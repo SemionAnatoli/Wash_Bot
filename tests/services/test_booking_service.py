@@ -2,7 +2,7 @@ from datetime import datetime
 
 import pytest
 
-from app.domain.errors import DomainError, ValidationError
+from app.domain.errors import BookingSlotUnavailableError, ValidationError
 from app.domain.statuses import BookingStatus
 from app.services.booking_service import (
     BookingCapacity,
@@ -95,7 +95,7 @@ def test_ensure_booking_can_be_created_rejects_full_capacity() -> None:
         overlapping_blocks=0,
     )
 
-    with pytest.raises(DomainError):
+    with pytest.raises(BookingSlotUnavailableError):
         ensure_booking_can_be_created(capacity)
 
 
@@ -106,5 +106,5 @@ def test_ensure_booking_can_be_created_rejects_blocked_time() -> None:
         overlapping_blocks=1,
     )
 
-    with pytest.raises(DomainError):
+    with pytest.raises(BookingSlotUnavailableError):
         ensure_booking_can_be_created(capacity)

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from app.domain.errors import DomainError, ValidationError
+from app.domain.errors import BookingSlotUnavailableError, ValidationError
 from app.domain.statuses import BookingStatus
 
 
@@ -44,6 +44,6 @@ def ensure_booking_can_be_created(capacity: BookingCapacity) -> None:
     if capacity.overlapping_blocks < 0:
         raise ValidationError("Overlapping block count cannot be negative.")
     if capacity.overlapping_blocks > 0:
-        raise DomainError("Cannot create booking during blocked time.")
+        raise BookingSlotUnavailableError("Cannot create booking during blocked time.")
     if capacity.peak_occupied_bays >= capacity.bay_count:
-        raise DomainError("Cannot create booking because capacity is full.")
+        raise BookingSlotUnavailableError("Cannot create booking because capacity is full.")

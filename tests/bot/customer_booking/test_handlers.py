@@ -1,5 +1,7 @@
 from datetime import date, datetime
 
+import pytest
+
 from app.bot.customer_booking.handlers import (
     handle_addon_selected,
     handle_addons_done,
@@ -23,7 +25,7 @@ from app.bot.customer_booking.messages import (
     SLOT_STALE_TEXT,
 )
 from app.bot.customer_booking.states import CustomerBookingFlow
-from app.domain.errors import DomainError
+from app.domain.errors import BookingSlotUnavailableError, DomainError
 from app.services.customer_booking import ServiceMenu
 from tests.bot.customer_booking.fakes import (
     FakeCallbackQuery,
@@ -300,7 +302,9 @@ async def test_booking_confirmation_creates_booking_and_clears_state() -> None:
 
 
 async def test_booking_confirmation_handles_stale_slot() -> None:
-    service = FakeCustomerBookingService(create_error=DomainError("Capacity is full."))
+    service = FakeCustomerBookingService(
+        create_error=BookingSlotUnavailableError("Capacity is full.")
+    )
     state = FakeState(
         data={
             "car_wash_id": 10,
@@ -323,6 +327,30 @@ async def test_booking_confirmation_handles_stale_slot() -> None:
     )
     assert state.state == CustomerBookingFlow.confirming
     assert state.cleared is False
+    assert service.created_bookings == []
+
+
+async def test_booking_confirmation_propagates_unexpected_domain_error() -> None:
+    service = FakeCustomerBookingService(create_error=DomainError("Branch was not found."))
+    state = FakeState(
+        data={
+            "car_wash_id": 10,
+            "branch_id": 20,
+            "main_service_id": 1,
+            "addon_service_ids": [],
+            "start_at": "2026-05-18T10:00:00",
+            "customer_name": "РРІР°РЅ",
+            "customer_phone": "+79131234567",
+            "vehicle_plate": "A123BC154",
+        }
+    )
+    callback = FakeCallbackQuery(data="book:confirm")
+
+    with pytest.raises(DomainError, match="Branch was not found."):
+        await handle_booking_confirmed(callback, state, customer_booking_service=service)
+
+    assert callback.message.answers == []
+    assert service.created_bookings == []
 
 
 async def test_change_time_returns_to_date_selection() -> None:
