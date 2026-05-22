@@ -2,6 +2,7 @@ from datetime import date, datetime
 
 import pytest
 
+from app.bot.customer_booking.callbacks import CANCEL_FLOW_CALLBACK, CHANGE_SERVICES_CALLBACK
 from app.bot.customer_booking.handlers import (
     handle_addon_selected,
     handle_addons_done,
@@ -191,6 +192,31 @@ async def test_date_selection_without_slots_keeps_date_selection_and_offers_date
     callback_data = reply_markup.inline_keyboard[0][0].callback_data
     assert callback_data is not None
     assert callback_data.startswith("book:date:")
+    callbacks = [button.callback_data for row in reply_markup.inline_keyboard for button in row]
+    assert CHANGE_SERVICES_CALLBACK in callbacks
+    assert CANCEL_FLOW_CALLBACK in callbacks
+
+
+async def test_date_selection_with_invalid_services_clears_state_and_shows_recovery() -> None:
+    callback = FakeCallbackQuery(data="book:date:2026-05-18")
+    state = FakeState(
+        data={
+            "car_wash_id": 10,
+            "branch_id": 20,
+            "main_service_id": 999,
+            "addon_service_ids": [],
+        },
+        state=CustomerBookingFlow.choosing_date,
+    )
+    service = FakeCustomerBookingService(
+        slots_error=DomainError("One or more services were not found.")
+    )
+
+    await handle_date_selected(callback, state, customer_booking_service=service)
+
+    assert state.cleared is True
+    assert state.data == {}
+    assert first_text(callback.message) == SELECTED_SERVICES_UNAVAILABLE_TEXT
 
 
 async def test_slot_selection_stores_start_and_asks_for_name() -> None:
@@ -400,7 +426,10 @@ def test_booking_callback_handlers_are_state_scoped() -> None:
     assert callback_handlers[5].filters[0].callback.states == (CustomerBookingFlow.choosing_slot,)
     assert callback_handlers[6].filters[0].callback.states == (CustomerBookingFlow.confirming,)
     assert callback_handlers[7].filters[0].callback.states == (CustomerBookingFlow.confirming,)
-    assert callback_handlers[8].filters[0].callback.states == (CustomerBookingFlow.confirming,)
+    assert callback_handlers[8].filters[0].callback.states == (
+        CustomerBookingFlow.confirming,
+        CustomerBookingFlow.choosing_date,
+    )
     assert callback_handlers[9].filters[0].callback.states == (
         CustomerBookingFlow.choosing_main_service,
         CustomerBookingFlow.choosing_addons,

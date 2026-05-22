@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+from html import escape
 
 from app.services.customer_booking import ServiceOption
 
@@ -43,7 +44,7 @@ def format_duration(duration_minutes: int) -> str:
 
 def service_line(service: ServiceOption) -> str:
     return (
-        f"{service.title} — {format_money(service.price)}, "
+        f"{escape(service.title)} — {format_money(service.price)}, "
         f"{format_duration(service.duration_minutes)}"
     )
 
@@ -57,6 +58,9 @@ def format_booking_summary(
     customer_phone: str,
     vehicle_plate: str,
 ) -> str:
+    customer_name = escape(customer_name)
+    customer_phone = escape(customer_phone)
+    vehicle_plate = escape(vehicle_plate)
     services = [main_service, *addons]
     total_price = sum((service.price for service in services), start=Decimal("0"))
     total_duration = sum(service.duration_minutes for service in services)

@@ -90,6 +90,27 @@ def date_keyboard(dates: Iterable[date]) -> InlineKeyboardMarkup:
     )
 
 
+def no_slots_keyboard(dates: Iterable[date]) -> InlineKeyboardMarkup:
+    rows = date_keyboard(dates).inline_keyboard
+    rows.extend(
+        [
+            [
+                InlineKeyboardButton(
+                    text="РР·РјРµРЅРёС‚СЊ СѓСЃР»СѓРіРё",
+                    callback_data=CHANGE_SERVICES_CALLBACK,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="РћС‚РјРµРЅРёС‚СЊ",
+                    callback_data=CANCEL_FLOW_CALLBACK,
+                )
+            ],
+        ]
+    )
+    return _markup(rows)
+
+
 def slots_keyboard(slots: Iterable[datetime]) -> InlineKeyboardMarkup:
     return _markup(
         [

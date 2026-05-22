@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import repositories
 from app.db.models import Booking, Service
-from app.domain.errors import DomainError
+from app.domain.errors import BookingSlotUnavailableError, DomainError
 from app.domain.services import SelectedService, calculate_total_duration
 from app.domain.slots import (
     BlockedInterval,
@@ -191,6 +191,19 @@ class CustomerBookingService:
             [_selected_service_from_model(service) for service in addons],
         )
         end_at = start_at + timedelta(minutes=duration)
+        hours = await repositories.get_working_hours_for_weekday(
+            self._session,
+            car_wash_id=car_wash_id,
+            branch_id=branch_id,
+            weekday=start_at.weekday(),
+        )
+        if hours is None:
+            raise BookingSlotUnavailableError("Cannot create booking outside working hours.")
+
+        work_start_at = datetime.combine(start_at.date(), hours.start_time)
+        work_end_at = datetime.combine(start_at.date(), hours.end_time)
+        if start_at < work_start_at or end_at > work_end_at:
+            raise BookingSlotUnavailableError("Cannot create booking outside working hours.")
 
         block_result = await self._session.execute(
             repositories.overlapping_blocks_query(

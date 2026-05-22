@@ -43,6 +43,25 @@ def test_service_line_contains_title_price_and_duration() -> None:
     assert text == "Стандарт — 900 руб., 1 ч"
 
 
+def test_booking_summary_escapes_html_dynamic_fields() -> None:
+    text = format_booking_summary(
+        main_service=option(1, "Foam <Basic> & Shine", "900", 60),
+        addons=[option(2, "Wax > Ceramic & Seal", "250", 15, is_addon=True)],
+        start_at=datetime(2026, 5, 18, 10),
+        customer_name="Ann <Bob> & Co",
+        customer_phone="+7 <913> & 123",
+        vehicle_plate="A<123>&BC",
+    )
+
+    assert "Foam &lt;Basic&gt; &amp; Shine" in text
+    assert "Wax &gt; Ceramic &amp; Seal" in text
+    assert "Ann &lt;Bob&gt; &amp; Co" in text
+    assert "+7 &lt;913&gt; &amp; 123" in text
+    assert "A&lt;123&gt;&amp;BC" in text
+    assert "Foam <Basic> & Shine" not in text
+    assert "Ann <Bob> & Co" not in text
+
+
 def test_format_booking_summary_contains_customer_choice() -> None:
     text = format_booking_summary(
         main_service=option(1, "Стандарт", "900", 60),

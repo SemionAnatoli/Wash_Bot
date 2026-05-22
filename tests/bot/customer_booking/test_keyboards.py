@@ -4,6 +4,8 @@ from decimal import Decimal
 from app.bot.customer_booking.callbacks import (
     ADDONS_DONE_CALLBACK,
     BOOKING_START_CALLBACK,
+    CANCEL_FLOW_CALLBACK,
+    CHANGE_SERVICES_CALLBACK,
     CONFIRM_BOOKING_CALLBACK,
 )
 from app.bot.customer_booking.keyboards import (
@@ -12,6 +14,7 @@ from app.bot.customer_booking.keyboards import (
     confirmation_keyboard,
     date_keyboard,
     main_services_keyboard,
+    no_slots_keyboard,
     slots_keyboard,
 )
 from app.services.customer_booking import ServiceOption
@@ -76,6 +79,17 @@ def test_date_and_slot_keyboards_use_stable_callbacks() -> None:
     assert callback_grid(slots_keyboard(slots)) == [
         ["book:slot:2026-05-18T10:00"],
         ["book:slot:2026-05-18T10:30"],
+    ]
+
+
+def test_no_slots_keyboard_offers_dates_change_services_and_cancel() -> None:
+    dates = [date(2026, 5, 18), date(2026, 5, 19)]
+
+    assert callback_grid(no_slots_keyboard(dates)) == [
+        ["book:date:2026-05-18"],
+        ["book:date:2026-05-19"],
+        [CHANGE_SERVICES_CALLBACK],
+        [CANCEL_FLOW_CALLBACK],
     ]
 
 

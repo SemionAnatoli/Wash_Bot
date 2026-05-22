@@ -23,6 +23,7 @@ from app.bot.customer_booking.keyboards import (
     confirmation_keyboard,
     date_keyboard,
     main_services_keyboard,
+    no_slots_keyboard,
     slots_keyboard,
 )
 from app.bot.customer_booking.messages import (
@@ -45,7 +46,7 @@ from app.bot.customer_booking.messages import (
     format_booking_summary,
 )
 from app.bot.customer_booking.states import CustomerBookingFlow
-from app.domain.errors import BookingSlotUnavailableError, ValidationError
+from app.domain.errors import BookingSlotUnavailableError, DomainError, ValidationError
 from app.domain.validation import normalize_name, normalize_phone, normalize_vehicle_plate
 from app.services.customer_booking import CustomerBookingService, ServiceMenu, ServiceOption
 
@@ -208,19 +209,24 @@ async def handle_date_selected(
     selected_day = date.fromisoformat(parse_date_callback(cast(str, callback.data)))
     data = await state.get_data()
     selected_service_ids = _selected_service_ids(data)
-    slots = await customer_booking_service.get_available_slots(
-        car_wash_id=int(data["car_wash_id"]),
-        branch_id=int(data["branch_id"]),
-        selected_service_ids=selected_service_ids,
-        day=selected_day,
-    )
+    try:
+        slots = await customer_booking_service.get_available_slots(
+            car_wash_id=int(data["car_wash_id"]),
+            branch_id=int(data["branch_id"]),
+            selected_service_ids=selected_service_ids,
+            day=selected_day,
+        )
+    except DomainError:
+        await state.clear()
+        await _callback_message(callback).answer(SELECTED_SERVICES_UNAVAILABLE_TEXT)
+        return
     await _update_allowed_data(state, selected_date=selected_day.isoformat())
 
     if not slots:
         await state.set_state(CustomerBookingFlow.choosing_date)
         await _callback_message(callback).answer(
             NO_SLOTS_TEXT,
-            reply_markup=date_keyboard(_next_dates(selected_day)),
+            reply_markup=no_slots_keyboard(_next_dates(selected_day)),
         )
         return
 
@@ -416,7 +422,7 @@ router.callback_query.register(
 )
 router.callback_query.register(
     handle_change_services,
-    StateFilter(CustomerBookingFlow.confirming),
+    StateFilter(CustomerBookingFlow.confirming, CustomerBookingFlow.choosing_date),
     F.data == CHANGE_SERVICES_CALLBACK,
 )
 router.callback_query.register(
