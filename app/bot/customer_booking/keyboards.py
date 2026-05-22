@@ -96,13 +96,13 @@ def no_slots_keyboard(dates: Iterable[date]) -> InlineKeyboardMarkup:
         [
             [
                 InlineKeyboardButton(
-                    text="РР·РјРµРЅРёС‚СЊ СѓСЃР»СѓРіРё",
+                    text="Изменить услуги",
                     callback_data=CHANGE_SERVICES_CALLBACK,
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="РћС‚РјРµРЅРёС‚СЊ",
+                    text="Отменить",
                     callback_data=CANCEL_FLOW_CALLBACK,
                 )
             ],

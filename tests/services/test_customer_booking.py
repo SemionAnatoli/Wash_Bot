@@ -271,6 +271,88 @@ async def test_create_booking_rejects_slot_overrunning_close_time(
     assert (await db_session.execute(select(Booking))).scalars().all() == []
 
 
+async def test_create_booking_rejects_slot_without_working_hours(
+    db_session: AsyncSession,
+) -> None:
+    car_wash = CarWash(name="Wash", confirmation_mode="auto", reminder_before_minutes=60)
+    db_session.add(car_wash)
+    await db_session.flush()
+    branch = Branch(car_wash_id=car_wash.id, title="Main", address="Street", bay_count=1)
+    db_session.add(branch)
+    await db_session.flush()
+    service = Service(
+        car_wash_id=car_wash.id,
+        title="Standard",
+        category="wash",
+        price=Decimal("900"),
+        duration_minutes=60,
+        is_addon=False,
+        is_active=True,
+    )
+    db_session.add(service)
+    await db_session.commit()
+
+    with pytest.raises(BookingSlotUnavailableError):
+        await CustomerBookingService(db_session).create_booking(
+            car_wash_id=car_wash.id,
+            branch_id=branch.id,
+            selected_service_ids=[service.id],
+            start_at=datetime(2026, 5, 18, 10),
+            customer_name="Ivan",
+            customer_phone="+79131234567",
+            vehicle_plate="A123BC154",
+        )
+
+    assert (await db_session.execute(select(Customer))).scalars().all() == []
+    assert (await db_session.execute(select(Booking))).scalars().all() == []
+
+
+async def test_create_booking_rejects_slot_before_open_time(
+    db_session: AsyncSession,
+) -> None:
+    car_wash = CarWash(name="Wash", confirmation_mode="auto", reminder_before_minutes=60)
+    db_session.add(car_wash)
+    await db_session.flush()
+    branch = Branch(car_wash_id=car_wash.id, title="Main", address="Street", bay_count=1)
+    db_session.add(branch)
+    await db_session.flush()
+    service = Service(
+        car_wash_id=car_wash.id,
+        title="Standard",
+        category="wash",
+        price=Decimal("900"),
+        duration_minutes=60,
+        is_addon=False,
+        is_active=True,
+    )
+    db_session.add(service)
+    await db_session.flush()
+    db_session.add(
+        WorkingHours(
+            car_wash_id=car_wash.id,
+            branch_id=branch.id,
+            weekday=0,
+            start_time=time(10),
+            end_time=time(12),
+        )
+    )
+    await db_session.commit()
+
+    with pytest.raises(BookingSlotUnavailableError):
+        await CustomerBookingService(db_session).create_booking(
+            car_wash_id=car_wash.id,
+            branch_id=branch.id,
+            selected_service_ids=[service.id],
+            start_at=datetime(2026, 5, 18, 9, 30),
+            customer_name="Ivan",
+            customer_phone="+79131234567",
+            vehicle_plate="A123BC154",
+        )
+
+    assert (await db_session.execute(select(Customer))).scalars().all() == []
+    assert (await db_session.execute(select(Booking))).scalars().all() == []
+
+
 async def test_create_booking_allows_sequential_existing_bookings_with_free_peak_capacity(
     db_session: AsyncSession,
 ) -> None:

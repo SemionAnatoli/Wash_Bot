@@ -84,13 +84,15 @@ def test_date_and_slot_keyboards_use_stable_callbacks() -> None:
 
 def test_no_slots_keyboard_offers_dates_change_services_and_cancel() -> None:
     dates = [date(2026, 5, 18), date(2026, 5, 19)]
+    markup = no_slots_keyboard(dates)
 
-    assert callback_grid(no_slots_keyboard(dates)) == [
+    assert callback_grid(markup) == [
         ["book:date:2026-05-18"],
         ["book:date:2026-05-19"],
         [CHANGE_SERVICES_CALLBACK],
         [CANCEL_FLOW_CALLBACK],
     ]
+    assert text_grid(markup)[2:] == [["Изменить услуги"], ["Отменить"]]
 
 
 def test_confirmation_keyboard_contains_confirm_and_recovery_actions() -> None:
