@@ -42,6 +42,7 @@ Create or modify:
 ## Task 1: Active Booking Callback, Message, And Keyboard Helpers
 
 **Files:**
+- Modify: `app/services/customer_booking.py`
 - Modify: `app/bot/customer_booking/callbacks.py`
 - Modify: `app/bot/customer_booking/messages.py`
 - Modify: `app/bot/customer_booking/keyboards.py`
@@ -191,7 +192,24 @@ C:\Users\Семен\AppData\Local\Programs\Python\Python312\python.exe -m pytest
 
 Expected: FAIL because constants, formatter, and keyboard do not exist.
 
-- [ ] **Step 5: Add callback constants**
+- [ ] **Step 5: Add active booking DTO**
+
+Modify `app/services/customer_booking.py` after `ServiceMenu`:
+
+```python
+@dataclass(frozen=True, slots=True)
+class ActiveCustomerBooking:
+    booking_id: int
+    status: str
+    start_at: datetime
+    end_at: datetime
+    customer_name: str
+    customer_phone: str
+    vehicle_plate: str
+    services: list[ServiceOption]
+```
+
+- [ ] **Step 6: Add callback constants**
 
 Modify `app/bot/customer_booking/callbacks.py`:
 
@@ -200,7 +218,7 @@ MY_ACTIVE_BOOKING_CALLBACK = "book:my_active"
 CANCEL_ACTIVE_BOOKING_CALLBACK = "book:cancel_active"
 ```
 
-- [ ] **Step 6: Add active booking texts and formatter**
+- [ ] **Step 7: Add active booking texts and formatter**
 
 Modify `app/bot/customer_booking/messages.py`:
 
@@ -256,13 +274,13 @@ def service_line(service: ServiceOption) -> str:
     )
 ```
 
-Add this import guarded by runtime type need:
+Add this import:
 
 ```python
 from app.services.customer_booking import ActiveCustomerBooking, ServiceOption
 ```
 
-- [ ] **Step 7: Add keyboards**
+- [ ] **Step 8: Add keyboards**
 
 Modify `app/bot/customer_booking/keyboards.py` imports:
 
@@ -321,7 +339,7 @@ def active_booking_keyboard() -> InlineKeyboardMarkup:
     )
 ```
 
-- [ ] **Step 8: Run helper tests**
+- [ ] **Step 9: Run helper tests**
 
 Run:
 
@@ -331,10 +349,10 @@ C:\Users\Семен\AppData\Local\Programs\Python\Python312\python.exe -m pytest
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add app/bot/customer_booking/callbacks.py app/bot/customer_booking/messages.py app/bot/customer_booking/keyboards.py tests/bot/customer_booking/test_callbacks.py tests/bot/customer_booking/test_messages.py tests/bot/customer_booking/test_keyboards.py
+git add app/services/customer_booking.py app/bot/customer_booking/callbacks.py app/bot/customer_booking/messages.py app/bot/customer_booking/keyboards.py tests/bot/customer_booking/test_callbacks.py tests/bot/customer_booking/test_messages.py tests/bot/customer_booking/test_keyboards.py
 git commit -m "feat: add active booking bot helpers"
 ```
 
@@ -720,20 +738,7 @@ from app.domain.errors import (
 from app.domain.statuses import BookingStatus, ensure_transition_allowed
 ```
 
-Add DTO:
-
-```python
-@dataclass(frozen=True, slots=True)
-class ActiveCustomerBooking:
-    booking_id: int
-    status: str
-    start_at: datetime
-    end_at: datetime
-    customer_name: str
-    customer_phone: str
-    vehicle_plate: str
-    services: list[ServiceOption]
-```
+`ActiveCustomerBooking` was added in Task 1. Reuse that DTO for the service methods below.
 
 Change `create_booking()` signature:
 
