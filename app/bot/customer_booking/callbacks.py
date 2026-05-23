@@ -1,6 +1,8 @@
 from datetime import datetime
 
 BOOKING_START_CALLBACK = "book:start"
+MY_ACTIVE_BOOKING_CALLBACK = "book:my_active"
+CANCEL_ACTIVE_BOOKING_CALLBACK = "book:cancel_active"
 ADDONS_DONE_CALLBACK = "book:addons_done"
 CONFIRM_BOOKING_CALLBACK = "book:confirm"
 CHANGE_SERVICES_CALLBACK = "book:change_services"

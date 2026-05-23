@@ -35,6 +35,18 @@ class ServiceMenu:
     addons: list[ServiceOption]
 
 
+@dataclass(frozen=True, slots=True)
+class ActiveCustomerBooking:
+    booking_id: int
+    status: str
+    start_at: datetime
+    end_at: datetime
+    customer_name: str
+    customer_phone: str
+    vehicle_plate: str
+    services: list[ServiceOption]
+
+
 def _to_service_option(service: Service) -> ServiceOption:
     return ServiceOption(
         id=service.id,

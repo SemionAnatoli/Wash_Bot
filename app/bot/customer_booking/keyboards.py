@@ -6,10 +6,12 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from app.bot.customer_booking.callbacks import (
     ADDONS_DONE_CALLBACK,
     BOOKING_START_CALLBACK,
+    CANCEL_ACTIVE_BOOKING_CALLBACK,
     CANCEL_FLOW_CALLBACK,
     CHANGE_SERVICES_CALLBACK,
     CHANGE_TIME_CALLBACK,
     CONFIRM_BOOKING_CALLBACK,
+    MY_ACTIVE_BOOKING_CALLBACK,
     build_addon_callback,
     build_date_callback,
     build_main_service_callback,
@@ -30,6 +32,25 @@ def booking_entry_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="Записаться",
                     callback_data=BOOKING_START_CALLBACK,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Моя запись",
+                    callback_data=MY_ACTIVE_BOOKING_CALLBACK,
+                )
+            ],
+        ]
+    )
+
+
+def active_booking_keyboard() -> InlineKeyboardMarkup:
+    return _markup(
+        [
+            [
+                InlineKeyboardButton(
+                    text="Отменить запись",
+                    callback_data=CANCEL_ACTIVE_BOOKING_CALLBACK,
                 )
             ]
         ]

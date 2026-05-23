@@ -4,11 +4,14 @@ from decimal import Decimal
 from app.bot.customer_booking.callbacks import (
     ADDONS_DONE_CALLBACK,
     BOOKING_START_CALLBACK,
+    CANCEL_ACTIVE_BOOKING_CALLBACK,
     CANCEL_FLOW_CALLBACK,
     CHANGE_SERVICES_CALLBACK,
     CONFIRM_BOOKING_CALLBACK,
+    MY_ACTIVE_BOOKING_CALLBACK,
 )
 from app.bot.customer_booking.keyboards import (
+    active_booking_keyboard,
     addons_keyboard,
     booking_entry_keyboard,
     confirmation_keyboard,
@@ -42,8 +45,15 @@ def text_grid(markup) -> list[list[str]]:
 def test_booking_entry_keyboard_contains_start_action() -> None:
     markup = booking_entry_keyboard()
 
-    assert callback_grid(markup) == [[BOOKING_START_CALLBACK]]
-    assert text_grid(markup) == [["Записаться"]]
+    assert callback_grid(markup) == [[BOOKING_START_CALLBACK], [MY_ACTIVE_BOOKING_CALLBACK]]
+    assert text_grid(markup) == [["Записаться"], ["Моя запись"]]
+
+
+def test_active_booking_keyboard_contains_cancel_action() -> None:
+    markup = active_booking_keyboard()
+
+    assert callback_grid(markup) == [[CANCEL_ACTIVE_BOOKING_CALLBACK]]
+    assert text_grid(markup) == [["Отменить запись"]]
 
 
 def test_main_services_keyboard_uses_service_callbacks() -> None:

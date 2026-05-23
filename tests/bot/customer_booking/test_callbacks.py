@@ -3,7 +3,9 @@ from datetime import datetime
 from app.bot.customer_booking.callbacks import (
     ADDONS_DONE_CALLBACK,
     BOOKING_START_CALLBACK,
+    CANCEL_ACTIVE_BOOKING_CALLBACK,
     CONFIRM_BOOKING_CALLBACK,
+    MY_ACTIVE_BOOKING_CALLBACK,
     build_addon_callback,
     build_date_callback,
     build_main_service_callback,
@@ -15,6 +17,8 @@ from app.bot.customer_booking.callbacks import (
 
 def test_booking_callback_builders_are_stable() -> None:
     assert BOOKING_START_CALLBACK == "book:start"
+    assert MY_ACTIVE_BOOKING_CALLBACK == "book:my_active"
+    assert CANCEL_ACTIVE_BOOKING_CALLBACK == "book:cancel_active"
     assert ADDONS_DONE_CALLBACK == "book:addons_done"
     assert CONFIRM_BOOKING_CALLBACK == "book:confirm"
     assert build_main_service_callback(12) == "book:main:12"

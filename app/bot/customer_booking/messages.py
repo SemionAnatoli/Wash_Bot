@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from html import escape
 
-from app.services.customer_booking import ServiceOption
+from app.services.customer_booking import ActiveCustomerBooking, ServiceOption
 
 START_TEXT = "Здравствуйте! Помогу записаться на автомойку."
 CHOOSE_SERVICE_TEXT = "Выберите услугу:"
@@ -21,6 +21,9 @@ GENERIC_ERROR_TEXT = "Что-то пошло не так. Попробуйте �
 CONFIRMED_TEXT = "Запись подтверждена."
 PENDING_TEXT = "Заявка на запись отправлена и ожидает подтверждения."
 SELECTED_SERVICES_UNAVAILABLE_TEXT = "Выбранные услуги больше недоступны. Начните запись заново."
+ACTIVE_BOOKING_EMPTY_TEXT = "У вас нет активной записи."
+ACTIVE_BOOKING_CANCELLED_TEXT = "Запись отменена."
+ACTIVE_BOOKING_CANCEL_TOO_LATE_TEXT = "Отменить запись уже нельзя. Свяжитесь с администратором."
 
 
 def format_money(amount: Decimal) -> str:
@@ -78,4 +81,29 @@ def format_booking_summary(
         f"Автомобиль: {vehicle_plate}\n"
         f"Итого: {format_money(total_price)}\n"
         f"Длительность: {format_duration(total_duration)}"
+    )
+
+
+def format_active_booking_summary(booking: ActiveCustomerBooking) -> str:
+    customer_name = escape(booking.customer_name)
+    customer_phone = escape(booking.customer_phone)
+    vehicle_plate = escape(booking.vehicle_plate)
+    status_label = {
+        "pending": "Ожидает подтверждения",
+        "confirmed": "Подтверждена",
+    }.get(booking.status, escape(booking.status))
+    total_price = sum((service.price for service in booking.services), start=Decimal("0"))
+    total_duration = sum(service.duration_minutes for service in booking.services)
+    service_lines = "\n".join(f"- {service_line(service)}" for service in booking.services)
+
+    return (
+        "Ваша запись\n"
+        f"Дата и время: {booking.start_at:%d.%m.%Y %H:%M}\n"
+        f"Статус: {status_label}\n"
+        f"Автомобиль: {vehicle_plate}\n"
+        f"Услуги:\n{service_lines}\n"
+        f"Длительность: {format_duration(total_duration)}\n"
+        f"Итого: {format_money(total_price)}\n"
+        f"Имя: {customer_name}\n"
+        f"Телефон: {customer_phone}"
     )
