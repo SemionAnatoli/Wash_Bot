@@ -1,6 +1,8 @@
 from datetime import datetime
+from typing import Any, cast
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, func, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
@@ -14,9 +16,7 @@ from app.db.models import (
     User,
     WorkingHours,
 )
-from app.db.models import (
-    BookingService as BookingServiceModel,
-)
+from app.db.models import BookingService as BookingServiceModel
 from app.domain.statuses import BookingStatus
 
 ACTIVE_CAPACITY_STATUSES = [BookingStatus.PENDING.value, BookingStatus.CONFIRMED.value]
@@ -305,6 +305,7 @@ async def find_active_customer_booking(
         .join(User, User.id == Customer.user_id)
         .where(
             Booking.car_wash_id == car_wash_id,
+            Customer.car_wash_id == car_wash_id,
             User.telegram_id == telegram_user_id,
             Booking.status.in_(ACTIVE_CAPACITY_STATUSES),
             Booking.start_at > now,
@@ -312,7 +313,11 @@ async def find_active_customer_booking(
         .order_by(Booking.start_at, Booking.id)
         .limit(1)
     )
-    return result.one_or_none()
+    row = result.one_or_none()
+    if row is None:
+        return None
+
+    return (row[0], row[1])
 
 
 async def list_booking_services(
@@ -330,21 +335,28 @@ async def list_booking_services(
         )
         .order_by(BookingServiceModel.is_main.desc(), Service.id)
     )
-    return list(result.all())
+    return [(booking_service, service) for booking_service, service in result.all()]
 
 
-async def update_booking_status(
+async def update_active_booking_status(
     session: AsyncSession,
     *,
     booking_id: int,
     status: str,
-) -> None:
-    booking = await session.get(Booking, booking_id)
-    if booking is None:
-        return
-
-    booking.status = status
-    await session.flush()
+) -> bool:
+    result = cast(
+        CursorResult[Any],
+        await session.execute(
+            update(Booking)
+            .where(
+                Booking.id == booking_id,
+                Booking.status.in_(ACTIVE_CAPACITY_STATUSES),
+            )
+            .values(status=status)
+            .execution_options(synchronize_session=False)
+        ),
+    )
+    return result.rowcount == 1
 
 
 async def create_notification_job(

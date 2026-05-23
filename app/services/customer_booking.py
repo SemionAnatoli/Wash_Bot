@@ -357,10 +357,13 @@ class CustomerBookingService:
             BookingStatus(booking.status),
             BookingStatus.CANCELLED_BY_CUSTOMER,
         )
-        await repositories.update_booking_status(
+        cancelled = await repositories.update_active_booking_status(
             self._session,
             booking_id=booking.id,
             status=BookingStatus.CANCELLED_BY_CUSTOMER.value,
         )
+        if not cancelled:
+            return False
+
         await self._session.commit()
         return True

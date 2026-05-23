@@ -3,8 +3,10 @@ from decimal import Decimal
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.db import repositories
+from app.db.base import Base
 from app.db.models import (
     Booking,
     BookingService,
@@ -223,6 +225,59 @@ async def test_create_booking_links_customer_to_telegram_user(
     assert user.telegram_id == 123456789
     assert user.username == "ivan_detailing"
     assert customer.user_id == user.id
+
+
+async def test_create_booking_reuses_existing_telegram_user_and_updates_username(
+    db_session: AsyncSession,
+) -> None:
+    car_wash = CarWash(name="Wash", confirmation_mode="auto", reminder_before_minutes=60)
+    existing_user = User(telegram_id=123456789, username="old_username")
+    db_session.add_all([car_wash, existing_user])
+    await db_session.flush()
+    branch = Branch(car_wash_id=car_wash.id, title="Main", address="Street", bay_count=1)
+    db_session.add(branch)
+    await db_session.flush()
+    main_service = Service(
+        car_wash_id=car_wash.id,
+        title="Standard",
+        category="wash",
+        price=Decimal("900"),
+        duration_minutes=60,
+        is_addon=False,
+        is_active=True,
+    )
+    db_session.add(main_service)
+    await db_session.flush()
+    db_session.add(
+        WorkingHours(
+            car_wash_id=car_wash.id,
+            branch_id=branch.id,
+            weekday=0,
+            start_time=time(10),
+            end_time=time(12),
+        )
+    )
+    await db_session.commit()
+
+    await CustomerBookingService(db_session).create_booking(
+        car_wash_id=car_wash.id,
+        branch_id=branch.id,
+        selected_service_ids=[main_service.id],
+        start_at=datetime(2026, 5, 18, 10),
+        customer_name="Ivan",
+        customer_phone="+79131234567",
+        vehicle_plate="A123BC154",
+        telegram_user_id=existing_user.telegram_id,
+        telegram_username="new_username",
+    )
+
+    users = (await db_session.execute(select(User).order_by(User.id))).scalars().all()
+    customer = (await db_session.execute(select(Customer))).scalar_one()
+
+    assert len(users) == 1
+    assert users[0].id == existing_user.id
+    assert users[0].username == "new_username"
+    assert customer.user_id == existing_user.id
 
 
 async def test_create_booking_rejects_slot_when_capacity_is_full(
@@ -627,6 +682,47 @@ async def test_get_active_booking_ignores_past_and_inactive_bookings(
     assert booking is None
 
 
+async def test_get_active_booking_returns_none_for_cross_tenant_customer_link(
+    db_session: AsyncSession,
+) -> None:
+    car_wash_a = CarWash(name="Wash A")
+    car_wash_b = CarWash(name="Wash B")
+    user = User(telegram_id=123456789, username="washer")
+    db_session.add_all([car_wash_a, car_wash_b, user])
+    await db_session.flush()
+    branch = Branch(car_wash_id=car_wash_a.id, title="Main", address="Street", bay_count=2)
+    db_session.add(branch)
+    await db_session.flush()
+    mismatched_customer = Customer(
+        car_wash_id=car_wash_b.id,
+        user_id=user.id,
+        name="Ivan",
+        phone="+79131234567",
+        vehicle_plate="A123BC154",
+    )
+    db_session.add(mismatched_customer)
+    await db_session.flush()
+    db_session.add(
+        Booking(
+            car_wash_id=car_wash_a.id,
+            branch_id=branch.id,
+            customer_id=mismatched_customer.id,
+            start_at=datetime(2026, 5, 19, 12),
+            end_at=datetime(2026, 5, 19, 13),
+            status=BookingStatus.CONFIRMED.value,
+        )
+    )
+    await db_session.commit()
+
+    booking = await CustomerBookingService(db_session).get_active_booking(
+        car_wash_id=car_wash_a.id,
+        telegram_user_id=user.telegram_id,
+        now=datetime(2026, 5, 19, 10),
+    )
+
+    assert booking is None
+
+
 async def test_cancel_active_booking_updates_status_when_allowed(
     db_session: AsyncSession,
 ) -> None:
@@ -663,10 +759,11 @@ async def test_cancel_active_booking_updates_status_when_allowed(
         now=datetime(2026, 5, 19, 10),
     )
 
-    refreshed = await db_session.get(Booking, booking.id)
+    refreshed_status = (
+        await db_session.execute(select(Booking.status).where(Booking.id == booking.id))
+    ).scalar_one()
     assert cancelled is True
-    assert refreshed is not None
-    assert refreshed.status == BookingStatus.CANCELLED_BY_CUSTOMER.value
+    assert refreshed_status == BookingStatus.CANCELLED_BY_CUSTOMER.value
 
 
 async def test_cancel_active_booking_allows_exactly_60_minutes_before_start(
@@ -705,10 +802,11 @@ async def test_cancel_active_booking_allows_exactly_60_minutes_before_start(
         now=datetime(2026, 5, 19, 11),
     )
 
-    refreshed = await db_session.get(Booking, booking.id)
+    refreshed_status = (
+        await db_session.execute(select(Booking.status).where(Booking.id == booking.id))
+    ).scalar_one()
     assert cancelled is True
-    assert refreshed is not None
-    assert refreshed.status == BookingStatus.CANCELLED_BY_CUSTOMER.value
+    assert refreshed_status == BookingStatus.CANCELLED_BY_CUSTOMER.value
 
 
 async def test_cancel_active_booking_rejects_less_than_60_minutes_before_start(
@@ -748,9 +846,10 @@ async def test_cancel_active_booking_rejects_less_than_60_minutes_before_start(
             now=datetime(2026, 5, 19, 11, 1),
         )
 
-    refreshed = await db_session.get(Booking, booking.id)
-    assert refreshed is not None
-    assert refreshed.status == BookingStatus.CONFIRMED.value
+    refreshed_status = (
+        await db_session.execute(select(Booking.status).where(Booking.id == booking.id))
+    ).scalar_one()
+    assert refreshed_status == BookingStatus.CONFIRMED.value
 
 
 async def test_cancel_active_booking_returns_false_without_active_booking(
@@ -768,3 +867,105 @@ async def test_cancel_active_booking_returns_false_without_active_booking(
     )
 
     assert cancelled is False
+
+
+async def test_cancel_active_booking_returns_false_when_booking_completed_concurrently(
+    tmp_path,
+) -> None:
+    database_path = tmp_path / "customer-booking-race.db"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with sessionmaker() as setup_session:
+            car_wash = CarWash(name="Wash")
+            setup_session.add(car_wash)
+            await setup_session.flush()
+            branch = Branch(
+                car_wash_id=car_wash.id,
+                title="Main",
+                address="Street",
+                bay_count=2,
+            )
+            user = User(telegram_id=123456789, username="washer")
+            setup_session.add_all([branch, user])
+            await setup_session.flush()
+            customer = Customer(
+                car_wash_id=car_wash.id,
+                user_id=user.id,
+                name="Ivan",
+                phone="+79131234567",
+                vehicle_plate="A123BC154",
+            )
+            setup_session.add(customer)
+            await setup_session.flush()
+            booking = Booking(
+                car_wash_id=car_wash.id,
+                branch_id=branch.id,
+                customer_id=customer.id,
+                start_at=datetime(2026, 5, 19, 12),
+                end_at=datetime(2026, 5, 19, 13),
+                status=BookingStatus.CONFIRMED.value,
+            )
+            setup_session.add(booking)
+            await setup_session.commit()
+            car_wash_id = car_wash.id
+            telegram_user_id = user.telegram_id
+            booking_id = booking.id
+
+        original_find = repositories.find_active_customer_booking
+
+        async def concurrent_find_active_customer_booking(
+            session: AsyncSession,
+            *,
+            car_wash_id: int,
+            telegram_user_id: int,
+            now: datetime,
+        ) -> tuple[Booking, Customer] | None:
+            booking_and_customer = await original_find(
+                session,
+                car_wash_id=car_wash_id,
+                telegram_user_id=telegram_user_id,
+                now=now,
+            )
+            assert booking_and_customer is not None
+
+            async with sessionmaker() as concurrent_session:
+                concurrent_booking = await concurrent_session.get(Booking, booking_id)
+                assert concurrent_booking is not None
+                concurrent_booking.status = BookingStatus.COMPLETED.value
+                await concurrent_session.commit()
+
+            return booking_and_customer
+
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(
+            repositories,
+            "find_active_customer_booking",
+            concurrent_find_active_customer_booking,
+        )
+        try:
+            async with sessionmaker() as cancellation_session:
+                cancelled = await CustomerBookingService(
+                    cancellation_session
+                ).cancel_active_booking(
+                    car_wash_id=car_wash_id,
+                    telegram_user_id=telegram_user_id,
+                    now=datetime(2026, 5, 19, 10),
+                )
+        finally:
+            monkeypatch.undo()
+
+        async with sessionmaker() as verification_session:
+            persisted_status = (
+                await verification_session.execute(
+                    select(Booking.status).where(Booking.id == booking_id)
+                )
+            ).scalar_one()
+
+        assert cancelled is False
+        assert persisted_status == BookingStatus.COMPLETED.value
+    finally:
+        await engine.dispose()
