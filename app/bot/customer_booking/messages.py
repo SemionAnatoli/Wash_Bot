@@ -45,11 +45,9 @@ def format_duration(duration_minutes: int) -> str:
     return " ".join(parts)
 
 
-def service_line(service: ServiceOption) -> str:
-    return (
-        f"{escape(service.title)} — {format_money(service.price)}, "
-        f"{format_duration(service.duration_minutes)}"
-    )
+def service_line(service: ServiceOption, *, escape_title: bool = True) -> str:
+    title = escape(service.title) if escape_title else service.title
+    return f"{title} — {format_money(service.price)}, {format_duration(service.duration_minutes)}"
 
 
 def format_booking_summary(

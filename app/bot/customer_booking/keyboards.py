@@ -62,7 +62,7 @@ def main_services_keyboard(services: Iterable[ServiceOption]) -> InlineKeyboardM
         [
             [
                 InlineKeyboardButton(
-                    text=service_line(service),
+                    text=service_line(service, escape_title=False),
                     callback_data=build_main_service_callback(service.id),
                 )
             ]
@@ -80,7 +80,10 @@ def addons_keyboard(
     rows = [
         [
             InlineKeyboardButton(
-                text=f"{'✓ ' if addon.id in selected_ids else ''}{service_line(addon)}",
+                text=(
+                    f"{'✓ ' if addon.id in selected_ids else ''}"
+                    f"{service_line(addon, escape_title=False)}"
+                ),
                 callback_data=build_addon_callback(addon.id),
             )
         ]

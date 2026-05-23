@@ -63,6 +63,15 @@ def test_main_services_keyboard_uses_service_callbacks() -> None:
     assert text_grid(markup) == [["Стандарт — 100 руб., 30 мин"]]
 
 
+def test_service_keyboard_text_keeps_readable_special_characters() -> None:
+    markup = main_services_keyboard([option(3, "Wash <Pro> & Wax")])
+    text = text_grid(markup)[0][0]
+
+    assert "Wash <Pro> & Wax" in text
+    assert "&lt;" not in text
+    assert "&amp;" not in text
+
+
 def test_addons_keyboard_marks_selected_addons_and_has_continue() -> None:
     markup = addons_keyboard(
         [option(5, "Воск", is_addon=True), option(6, "Чернение шин", is_addon=True)],
