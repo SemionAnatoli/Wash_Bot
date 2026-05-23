@@ -219,8 +219,13 @@ async def test_create_booking_links_customer_to_telegram_user(
         telegram_username="ivan_detailing",
     )
 
-    customer = (await db_session.execute(select(Customer))).scalar_one()
-    user = (await db_session.execute(select(User))).scalar_one()
+    verification_sessionmaker = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+    )
+    async with verification_sessionmaker() as verification_session:
+        customer = (await verification_session.execute(select(Customer))).scalar_one()
+        user = (await verification_session.execute(select(User))).scalar_one()
 
     assert user.telegram_id == 123456789
     assert user.username == "ivan_detailing"
@@ -271,8 +276,13 @@ async def test_create_booking_reuses_existing_telegram_user_and_updates_username
         telegram_username="new_username",
     )
 
-    users = (await db_session.execute(select(User).order_by(User.id))).scalars().all()
-    customer = (await db_session.execute(select(Customer))).scalar_one()
+    verification_sessionmaker = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+    )
+    async with verification_sessionmaker() as verification_session:
+        users = (await verification_session.execute(select(User).order_by(User.id))).scalars().all()
+        customer = (await verification_session.execute(select(Customer))).scalar_one()
 
     assert len(users) == 1
     assert users[0].id == existing_user.id
