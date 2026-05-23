@@ -18,7 +18,12 @@ from app.db.models import (
     User,
     WorkingHours,
 )
-from app.domain.errors import BookingSlotUnavailableError, CancellationTooLateError, DomainError
+from app.domain.errors import (
+    ActiveBookingAlreadyExistsError,
+    BookingSlotUnavailableError,
+    CancellationTooLateError,
+    DomainError,
+)
 from app.domain.statuses import BookingStatus
 from app.services.customer_booking import CustomerBookingService
 
@@ -288,6 +293,78 @@ async def test_create_booking_reuses_existing_telegram_user_and_updates_username
     assert users[0].id == existing_user.id
     assert users[0].username == "new_username"
     assert customer.user_id == existing_user.id
+
+
+async def test_create_booking_rejects_second_future_active_booking_for_same_telegram_user(
+    db_session: AsyncSession,
+) -> None:
+    car_wash = CarWash(name="Wash", confirmation_mode="auto", reminder_before_minutes=60)
+    db_session.add(car_wash)
+    await db_session.flush()
+    branch = Branch(car_wash_id=car_wash.id, title="Main", address="Street", bay_count=1)
+    db_session.add(branch)
+    await db_session.flush()
+    service = Service(
+        car_wash_id=car_wash.id,
+        title="Standard",
+        category="wash",
+        price=Decimal("900"),
+        duration_minutes=60,
+        is_addon=False,
+        is_active=True,
+    )
+    db_session.add(service)
+    await db_session.flush()
+    db_session.add(
+        WorkingHours(
+            car_wash_id=car_wash.id,
+            branch_id=branch.id,
+            weekday=0,
+            start_time=time(10),
+            end_time=time(15),
+        )
+    )
+    await db_session.commit()
+
+    booking_service = CustomerBookingService(db_session)
+    first_booking = await booking_service.create_booking(
+        car_wash_id=car_wash.id,
+        branch_id=branch.id,
+        selected_service_ids=[service.id],
+        start_at=datetime(2026, 5, 25, 10),
+        customer_name="Ivan",
+        customer_phone="+79131234567",
+        vehicle_plate="A123BC154",
+        telegram_user_id=123456789,
+        telegram_username="ivan_detailing",
+    )
+
+    with pytest.raises(ActiveBookingAlreadyExistsError):
+        await booking_service.create_booking(
+            car_wash_id=car_wash.id,
+            branch_id=branch.id,
+            selected_service_ids=[service.id],
+            start_at=datetime(2026, 5, 25, 12),
+            customer_name="Ivan",
+            customer_phone="+79131234567",
+            vehicle_plate="A123BC154",
+            telegram_user_id=123456789,
+            telegram_username="ivan_detailing",
+        )
+
+    customers = (await db_session.execute(select(Customer).order_by(Customer.id))).scalars().all()
+    bookings = (await db_session.execute(select(Booking).order_by(Booking.id))).scalars().all()
+    active_booking = await booking_service.get_active_booking(
+        car_wash_id=car_wash.id,
+        telegram_user_id=123456789,
+        now=datetime(2026, 5, 25, 9),
+    )
+
+    assert len(customers) == 1
+    assert len(bookings) == 1
+    assert bookings[0].id == first_booking.id
+    assert active_booking is not None
+    assert active_booking.booking_id == first_booking.id
 
 
 async def test_create_booking_rejects_slot_when_capacity_is_full(

@@ -2,6 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from app.bot.customer_booking.messages import (
+    ACTIVE_BOOKING_ALREADY_EXISTS_TEXT,
     ACTIVE_BOOKING_CANCEL_TOO_LATE_TEXT,
     ACTIVE_BOOKING_CANCELLED_TEXT,
     ACTIVE_BOOKING_EMPTY_TEXT,
@@ -53,6 +54,14 @@ def test_active_booking_text_constants_are_stable() -> None:
     assert (
         ACTIVE_BOOKING_CANCEL_TOO_LATE_TEXT
         == "Отменить запись уже нельзя. Свяжитесь с администратором."
+    )
+
+
+def test_active_booking_already_exists_text_is_stable() -> None:
+    assert (
+        ACTIVE_BOOKING_ALREADY_EXISTS_TEXT
+        == "У вас уже есть активная запись. Откройте «Моя запись», "
+        "чтобы посмотреть или отменить её."
     )
 
 

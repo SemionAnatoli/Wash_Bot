@@ -6,7 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import repositories
 from app.db.models import Booking, Service
-from app.domain.errors import BookingSlotUnavailableError, CancellationTooLateError, DomainError
+from app.domain.errors import (
+    ActiveBookingAlreadyExistsError,
+    BookingSlotUnavailableError,
+    CancellationTooLateError,
+    DomainError,
+)
 from app.domain.services import SelectedService, calculate_total_duration
 from app.domain.slots import (
     BlockedInterval,
@@ -253,6 +258,15 @@ class CustomerBookingService:
 
         user_id: int | None = None
         if telegram_user_id is not None:
+            existing_booking = await repositories.find_active_customer_booking(
+                self._session,
+                car_wash_id=car_wash_id,
+                telegram_user_id=telegram_user_id,
+                now=datetime.now(),
+            )
+            if existing_booking is not None:
+                raise ActiveBookingAlreadyExistsError("Active booking already exists.")
+
             user = await repositories.get_or_create_user(
                 self._session,
                 telegram_id=telegram_user_id,

@@ -3,6 +3,7 @@ from typing import Any, cast
 
 from sqlalchemy import Select, func, select, update
 from sqlalchemy.engine import CursorResult
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
@@ -214,9 +215,17 @@ async def get_or_create_user(
     user = result.scalar_one_or_none()
     if user is None:
         user = User(telegram_id=telegram_id, username=username)
-        session.add(user)
-        await session.flush()
-        return user
+        try:
+            async with session.begin_nested():
+                session.add(user)
+                await session.flush()
+        except IntegrityError:
+            result = await session.execute(select(User).where(User.telegram_id == telegram_id))
+            user = result.scalar_one_or_none()
+            if user is None:
+                raise
+        else:
+            return user
 
     if username is not None and user.username != username:
         user.username = username

@@ -22,6 +22,9 @@ CONFIRMED_TEXT = "Запись подтверждена."
 PENDING_TEXT = "Заявка на запись отправлена и ожидает подтверждения."
 SELECTED_SERVICES_UNAVAILABLE_TEXT = "Выбранные услуги больше недоступны. Начните запись заново."
 ACTIVE_BOOKING_EMPTY_TEXT = "У вас нет активной записи."
+ACTIVE_BOOKING_ALREADY_EXISTS_TEXT = (
+    "У вас уже есть активная запись. Откройте «Моя запись», чтобы посмотреть или отменить её."
+)
 ACTIVE_BOOKING_CANCELLED_TEXT = "Запись отменена."
 ACTIVE_BOOKING_CANCEL_TOO_LATE_TEXT = "Отменить запись уже нельзя. Свяжитесь с администратором."
 

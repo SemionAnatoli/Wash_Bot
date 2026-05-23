@@ -6,6 +6,10 @@ class BookingSlotUnavailableError(DomainError):
     """Raised when a booking slot is no longer available."""
 
 
+class ActiveBookingAlreadyExistsError(DomainError):
+    """Raised when a Telegram customer already has an active future booking."""
+
+
 class CancellationTooLateError(DomainError):
     """Raised when a booking can no longer be cancelled by the customer."""
 

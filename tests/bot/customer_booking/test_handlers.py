@@ -28,6 +28,7 @@ from app.bot.customer_booking.handlers import (
     router,
 )
 from app.bot.customer_booking.messages import (
+    ACTIVE_BOOKING_ALREADY_EXISTS_TEXT,
     ACTIVE_BOOKING_CANCEL_TOO_LATE_TEXT,
     ACTIVE_BOOKING_CANCELLED_TEXT,
     ACTIVE_BOOKING_EMPTY_TEXT,
@@ -37,7 +38,12 @@ from app.bot.customer_booking.messages import (
     format_active_booking_summary,
 )
 from app.bot.customer_booking.states import CustomerBookingFlow
-from app.domain.errors import BookingSlotUnavailableError, CancellationTooLateError, DomainError
+from app.domain.errors import (
+    ActiveBookingAlreadyExistsError,
+    BookingSlotUnavailableError,
+    CancellationTooLateError,
+    DomainError,
+)
 from app.services.customer_booking import ServiceMenu
 from tests.bot.customer_booking.fakes import (
     FakeCallbackQuery,
@@ -364,6 +370,33 @@ async def test_booking_confirmation_handles_stale_slot() -> None:
     assert callback.message.answers[0]["reply_markup"].inline_keyboard[0][0].callback_data == (
         "book:confirm"
     )
+    assert state.state == CustomerBookingFlow.confirming
+    assert state.cleared is False
+    assert service.created_bookings == []
+
+
+async def test_booking_confirmation_handles_existing_active_booking() -> None:
+    service = FakeCustomerBookingService(
+        create_error=ActiveBookingAlreadyExistsError("Active booking already exists.")
+    )
+    state = FakeState(
+        data={
+            "car_wash_id": 10,
+            "branch_id": 20,
+            "main_service_id": 1,
+            "addon_service_ids": [],
+            "start_at": "2026-05-18T10:00:00",
+            "customer_name": "РРІР°РЅ",
+            "customer_phone": "+79131234567",
+            "vehicle_plate": "A123BC154",
+        },
+        state=CustomerBookingFlow.confirming,
+    )
+    callback = FakeCallbackQuery(data="book:confirm")
+
+    await handle_booking_confirmed(callback, state, customer_booking_service=service)
+
+    assert first_text(callback.message) == ACTIVE_BOOKING_ALREADY_EXISTS_TEXT
     assert state.state == CustomerBookingFlow.confirming
     assert state.cleared is False
     assert service.created_bookings == []

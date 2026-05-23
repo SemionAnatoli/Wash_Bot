@@ -30,6 +30,7 @@ from app.bot.customer_booking.keyboards import (
     slots_keyboard,
 )
 from app.bot.customer_booking.messages import (
+    ACTIVE_BOOKING_ALREADY_EXISTS_TEXT,
     ACTIVE_BOOKING_CANCEL_TOO_LATE_TEXT,
     ACTIVE_BOOKING_CANCELLED_TEXT,
     ACTIVE_BOOKING_EMPTY_TEXT,
@@ -54,6 +55,7 @@ from app.bot.customer_booking.messages import (
 )
 from app.bot.customer_booking.states import CustomerBookingFlow
 from app.domain.errors import (
+    ActiveBookingAlreadyExistsError,
     BookingSlotUnavailableError,
     CancellationTooLateError,
     DomainError,
@@ -356,6 +358,10 @@ async def handle_booking_confirmed(
             SLOT_STALE_TEXT,
             reply_markup=confirmation_keyboard(),
         )
+        return
+    except ActiveBookingAlreadyExistsError:
+        await state.set_state(CustomerBookingFlow.confirming)
+        await _callback_message(callback).answer(ACTIVE_BOOKING_ALREADY_EXISTS_TEXT)
         return
 
     await state.clear()
