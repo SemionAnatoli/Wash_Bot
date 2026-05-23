@@ -2,8 +2,15 @@ from datetime import date, datetime
 
 import pytest
 
-from app.bot.customer_booking.callbacks import CANCEL_FLOW_CALLBACK, CHANGE_SERVICES_CALLBACK
+from app.bot.customer_booking.callbacks import (
+    CANCEL_ACTIVE_BOOKING_CALLBACK,
+    CANCEL_FLOW_CALLBACK,
+    CHANGE_SERVICES_CALLBACK,
+    MY_ACTIVE_BOOKING_CALLBACK,
+)
 from app.bot.customer_booking.handlers import (
+    handle_active_booking_cancelled,
+    handle_active_booking_requested,
     handle_addon_selected,
     handle_addons_done,
     handle_booking_confirmed,
@@ -21,12 +28,16 @@ from app.bot.customer_booking.handlers import (
     router,
 )
 from app.bot.customer_booking.messages import (
+    ACTIVE_BOOKING_CANCEL_TOO_LATE_TEXT,
+    ACTIVE_BOOKING_CANCELLED_TEXT,
+    ACTIVE_BOOKING_EMPTY_TEXT,
     NO_SERVICES_TEXT,
     SELECTED_SERVICES_UNAVAILABLE_TEXT,
     SLOT_STALE_TEXT,
+    format_active_booking_summary,
 )
 from app.bot.customer_booking.states import CustomerBookingFlow
-from app.domain.errors import BookingSlotUnavailableError, DomainError
+from app.domain.errors import BookingSlotUnavailableError, CancellationTooLateError, DomainError
 from app.services.customer_booking import ServiceMenu
 from tests.bot.customer_booking.fakes import (
     FakeCallbackQuery,
@@ -322,6 +333,8 @@ async def test_booking_confirmation_creates_booking_and_clears_state() -> None:
         "customer_name": "Иван",
         "customer_phone": "+79131234567",
         "vehicle_plate": "A123BC154",
+        "telegram_user_id": 1001,
+        "telegram_username": "ivan",
     }
     assert "подтверждена" in first_text(callback.message).lower()
     assert state.cleared is True
@@ -379,6 +392,78 @@ async def test_booking_confirmation_propagates_unexpected_domain_error() -> None
     assert service.created_bookings == []
 
 
+async def test_active_booking_requested_shows_empty_state_without_booking() -> None:
+    service = FakeCustomerBookingService(active_booking=None)
+    callback = FakeCallbackQuery(data="book:my_active")
+
+    await handle_active_booking_requested(
+        callback,
+        customer_booking_service=service,
+        default_car_wash_id=10,
+    )
+
+    assert service.requested_active_bookings[0]["car_wash_id"] == 10
+    assert service.requested_active_bookings[0]["telegram_user_id"] == 1001
+    assert first_text(callback.message) == ACTIVE_BOOKING_EMPTY_TEXT
+
+
+async def test_active_booking_requested_shows_summary_and_cancel_button() -> None:
+    service = FakeCustomerBookingService()
+    callback = FakeCallbackQuery(data="book:my_active")
+
+    await handle_active_booking_requested(
+        callback,
+        customer_booking_service=service,
+        default_car_wash_id=10,
+    )
+
+    assert first_text(callback.message) == format_active_booking_summary(service.active_booking)
+    markup = callback.message.answers[0]["reply_markup"]
+    assert markup.inline_keyboard[0][0].callback_data == "book:cancel_active"
+
+
+async def test_active_booking_cancelled_cancels_booking() -> None:
+    service = FakeCustomerBookingService()
+    callback = FakeCallbackQuery(data="book:cancel_active")
+
+    await handle_active_booking_cancelled(
+        callback,
+        customer_booking_service=service,
+        default_car_wash_id=10,
+    )
+
+    assert service.cancel_requests[0]["car_wash_id"] == 10
+    assert service.cancel_requests[0]["telegram_user_id"] == 1001
+    assert service.cancel_requests[0]["cancellation_deadline_minutes"] == 60
+    assert first_text(callback.message) == ACTIVE_BOOKING_CANCELLED_TEXT
+
+
+async def test_active_booking_cancelled_handles_late_cancellation() -> None:
+    service = FakeCustomerBookingService(cancel_error=CancellationTooLateError("Too late."))
+    callback = FakeCallbackQuery(data="book:cancel_active")
+
+    await handle_active_booking_cancelled(
+        callback,
+        customer_booking_service=service,
+        default_car_wash_id=10,
+    )
+
+    assert first_text(callback.message) == ACTIVE_BOOKING_CANCEL_TOO_LATE_TEXT
+
+
+async def test_active_booking_cancelled_handles_stale_empty_booking() -> None:
+    service = FakeCustomerBookingService(cancel_result=False)
+    callback = FakeCallbackQuery(data="book:cancel_active")
+
+    await handle_active_booking_cancelled(
+        callback,
+        customer_booking_service=service,
+        default_car_wash_id=10,
+    )
+
+    assert first_text(callback.message) == ACTIVE_BOOKING_EMPTY_TEXT
+
+
 async def test_change_time_returns_to_date_selection() -> None:
     callback = FakeCallbackQuery(data="book:change_time")
     state = FakeState()
@@ -415,22 +500,44 @@ async def test_cancel_flow_clears_state() -> None:
 
 
 def test_booking_callback_handlers_are_state_scoped() -> None:
-    callback_handlers = router.callback_query.handlers
+    callback_handlers = {
+        handler.callback.__name__: handler for handler in router.callback_query.handlers
+    }
+    callback_names = [handler.callback.__name__ for handler in router.callback_query.handlers]
 
-    assert callback_handlers[1].filters[0].callback.states == (
+    assert callback_names[:3] == [
+        "handle_booking_start",
+        "handle_active_booking_requested",
+        "handle_active_booking_cancelled",
+    ]
+    assert MY_ACTIVE_BOOKING_CALLBACK == "book:my_active"
+    assert CANCEL_ACTIVE_BOOKING_CALLBACK == "book:cancel_active"
+    assert callback_handlers["handle_main_service_selected"].filters[0].callback.states == (
         CustomerBookingFlow.choosing_main_service,
     )
-    assert callback_handlers[2].filters[0].callback.states == (CustomerBookingFlow.choosing_addons,)
-    assert callback_handlers[3].filters[0].callback.states == (CustomerBookingFlow.choosing_addons,)
-    assert callback_handlers[4].filters[0].callback.states == (CustomerBookingFlow.choosing_date,)
-    assert callback_handlers[5].filters[0].callback.states == (CustomerBookingFlow.choosing_slot,)
-    assert callback_handlers[6].filters[0].callback.states == (CustomerBookingFlow.confirming,)
-    assert callback_handlers[7].filters[0].callback.states == (CustomerBookingFlow.confirming,)
-    assert callback_handlers[8].filters[0].callback.states == (
+    assert callback_handlers["handle_addon_selected"].filters[0].callback.states == (
+        CustomerBookingFlow.choosing_addons,
+    )
+    assert callback_handlers["handle_addons_done"].filters[0].callback.states == (
+        CustomerBookingFlow.choosing_addons,
+    )
+    assert callback_handlers["handle_date_selected"].filters[0].callback.states == (
+        CustomerBookingFlow.choosing_date,
+    )
+    assert callback_handlers["handle_slot_selected"].filters[0].callback.states == (
+        CustomerBookingFlow.choosing_slot,
+    )
+    assert callback_handlers["handle_booking_confirmed"].filters[0].callback.states == (
+        CustomerBookingFlow.confirming,
+    )
+    assert callback_handlers["handle_change_time"].filters[0].callback.states == (
+        CustomerBookingFlow.confirming,
+    )
+    assert callback_handlers["handle_change_services"].filters[0].callback.states == (
         CustomerBookingFlow.confirming,
         CustomerBookingFlow.choosing_date,
     )
-    assert callback_handlers[9].filters[0].callback.states == (
+    assert callback_handlers["handle_cancel_flow"].filters[0].callback.states == (
         CustomerBookingFlow.choosing_main_service,
         CustomerBookingFlow.choosing_addons,
         CustomerBookingFlow.choosing_date,

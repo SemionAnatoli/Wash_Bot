@@ -9,15 +9,18 @@ from aiogram.types import CallbackQuery, Message
 from app.bot.customer_booking.callbacks import (
     ADDONS_DONE_CALLBACK,
     BOOKING_START_CALLBACK,
+    CANCEL_ACTIVE_BOOKING_CALLBACK,
     CANCEL_FLOW_CALLBACK,
     CHANGE_SERVICES_CALLBACK,
     CHANGE_TIME_CALLBACK,
     CONFIRM_BOOKING_CALLBACK,
+    MY_ACTIVE_BOOKING_CALLBACK,
     parse_date_callback,
     parse_id_callback,
     parse_slot_callback,
 )
 from app.bot.customer_booking.keyboards import (
+    active_booking_keyboard,
     addons_keyboard,
     booking_entry_keyboard,
     confirmation_keyboard,
@@ -27,6 +30,9 @@ from app.bot.customer_booking.keyboards import (
     slots_keyboard,
 )
 from app.bot.customer_booking.messages import (
+    ACTIVE_BOOKING_CANCEL_TOO_LATE_TEXT,
+    ACTIVE_BOOKING_CANCELLED_TEXT,
+    ACTIVE_BOOKING_EMPTY_TEXT,
     ASK_NAME_TEXT,
     ASK_PHONE_TEXT,
     ASK_VEHICLE_PLATE_TEXT,
@@ -43,10 +49,16 @@ from app.bot.customer_booking.messages import (
     SELECTED_SERVICES_UNAVAILABLE_TEXT,
     SLOT_STALE_TEXT,
     START_TEXT,
+    format_active_booking_summary,
     format_booking_summary,
 )
 from app.bot.customer_booking.states import CustomerBookingFlow
-from app.domain.errors import BookingSlotUnavailableError, DomainError, ValidationError
+from app.domain.errors import (
+    BookingSlotUnavailableError,
+    CancellationTooLateError,
+    DomainError,
+    ValidationError,
+)
 from app.domain.validation import normalize_name, normalize_phone, normalize_vehicle_plate
 from app.services.customer_booking import CustomerBookingService, ServiceMenu, ServiceOption
 
@@ -68,6 +80,13 @@ def _callback_message(callback: CallbackQuery) -> Message:
     if callback.message is None:
         raise RuntimeError("Callback query has no message.")
     return cast(Message, callback.message)
+
+
+def _telegram_user(callback_or_message: CallbackQuery | Message) -> tuple[int, str | None]:
+    user = callback_or_message.from_user
+    if user is None:
+        raise RuntimeError("Telegram user is missing.")
+    return user.id, user.username
 
 
 def _next_dates(start: date | None = None) -> list[date]:
@@ -318,6 +337,7 @@ async def handle_booking_confirmed(
     await callback.answer()
 
     data = await state.get_data()
+    telegram_user_id, telegram_username = _telegram_user(callback)
     try:
         booking = await customer_booking_service.create_booking(
             car_wash_id=int(data["car_wash_id"]),
@@ -327,6 +347,8 @@ async def handle_booking_confirmed(
             customer_name=str(data["customer_name"]),
             customer_phone=str(data["customer_phone"]),
             vehicle_plate=str(data["vehicle_plate"]),
+            telegram_user_id=telegram_user_id,
+            telegram_username=telegram_username,
         )
     except BookingSlotUnavailableError:
         await state.set_state(CustomerBookingFlow.confirming)
@@ -338,6 +360,50 @@ async def handle_booking_confirmed(
 
     await state.clear()
     text = CONFIRMED_TEXT if booking.status == "confirmed" else PENDING_TEXT
+    await _callback_message(callback).answer(text)
+
+
+async def handle_active_booking_requested(
+    callback: CallbackQuery,
+    *,
+    customer_booking_service: CustomerBookingService,
+    default_car_wash_id: int,
+) -> None:
+    await callback.answer()
+    telegram_user_id, _ = _telegram_user(callback)
+    booking = await customer_booking_service.get_active_booking(
+        car_wash_id=default_car_wash_id,
+        telegram_user_id=telegram_user_id,
+    )
+    if booking is None:
+        await _callback_message(callback).answer(ACTIVE_BOOKING_EMPTY_TEXT)
+        return
+
+    await _callback_message(callback).answer(
+        format_active_booking_summary(booking),
+        reply_markup=active_booking_keyboard(),
+    )
+
+
+async def handle_active_booking_cancelled(
+    callback: CallbackQuery,
+    *,
+    customer_booking_service: CustomerBookingService,
+    default_car_wash_id: int,
+) -> None:
+    await callback.answer()
+    telegram_user_id, _ = _telegram_user(callback)
+    try:
+        cancelled = await customer_booking_service.cancel_active_booking(
+            car_wash_id=default_car_wash_id,
+            telegram_user_id=telegram_user_id,
+            cancellation_deadline_minutes=60,
+        )
+    except CancellationTooLateError:
+        await _callback_message(callback).answer(ACTIVE_BOOKING_CANCEL_TOO_LATE_TEXT)
+        return
+
+    text = ACTIVE_BOOKING_CANCELLED_TEXT if cancelled else ACTIVE_BOOKING_EMPTY_TEXT
     await _callback_message(callback).answer(text)
 
 
@@ -379,6 +445,14 @@ async def handle_cancel_flow(callback: CallbackQuery, state: FSMContext) -> None
 
 router.message.register(handle_start, CommandStart())
 router.callback_query.register(handle_booking_start, F.data == BOOKING_START_CALLBACK)
+router.callback_query.register(
+    handle_active_booking_requested,
+    F.data == MY_ACTIVE_BOOKING_CALLBACK,
+)
+router.callback_query.register(
+    handle_active_booking_cancelled,
+    F.data == CANCEL_ACTIVE_BOOKING_CALLBACK,
+)
 router.callback_query.register(
     handle_main_service_selected,
     StateFilter(CustomerBookingFlow.choosing_main_service),

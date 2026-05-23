@@ -3,12 +3,23 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from app.services.customer_booking import ServiceMenu, ServiceOption
+from app.services.customer_booking import (
+    ActiveCustomerBooking,
+    ServiceMenu,
+    ServiceOption,
+)
+
+
+@dataclass
+class FakeTelegramUser:
+    id: int = 1001
+    username: str | None = "ivan"
 
 
 @dataclass
 class FakeMessage:
     text: str | None = None
+    from_user: FakeTelegramUser | None = field(default_factory=FakeTelegramUser)
     answers: list[dict[str, Any]] = field(default_factory=list)
 
     async def answer(self, text: str, reply_markup: Any = None) -> None:
@@ -19,6 +30,7 @@ class FakeMessage:
 class FakeCallbackQuery:
     data: str
     message: FakeMessage = field(default_factory=FakeMessage)
+    from_user: FakeTelegramUser | None = field(default_factory=FakeTelegramUser)
     answered: bool = False
 
     async def answer(self) -> None:
@@ -69,12 +81,31 @@ class FakeCustomerBookingService:
         )
     )
     slots: list[datetime] = field(default_factory=lambda: [datetime(2026, 5, 18, 10)])
+    active_booking: ActiveCustomerBooking | None = field(
+        default_factory=lambda: ActiveCustomerBooking(
+            booking_id=42,
+            status="confirmed",
+            start_at=datetime(2026, 5, 18, 10),
+            end_at=datetime(2026, 5, 18, 11),
+            customer_name="Иван",
+            customer_phone="+79131234567",
+            vehicle_plate="A123BC154",
+            services=[
+                option(1, "Стандарт"),
+                option(2, "Воск", is_addon=True),
+            ],
+        )
+    )
     requested_menus: list[dict[str, Any]] = field(default_factory=list)
     requested_slots: list[dict[str, Any]] = field(default_factory=list)
+    requested_active_bookings: list[dict[str, Any]] = field(default_factory=list)
+    cancel_requests: list[dict[str, Any]] = field(default_factory=list)
     created_bookings: list[dict[str, Any]] = field(default_factory=list)
     booking_status: str = "confirmed"
+    cancel_result: bool = True
     slots_error: Exception | None = None
     create_error: Exception | None = None
+    cancel_error: Exception | None = None
 
     async def get_service_menu(self, *, car_wash_id: int) -> ServiceMenu:
         self.requested_menus.append({"car_wash_id": car_wash_id})
@@ -110,6 +141,8 @@ class FakeCustomerBookingService:
         customer_name: str,
         customer_phone: str,
         vehicle_plate: str,
+        telegram_user_id: int | None = None,
+        telegram_username: str | None = None,
     ) -> Any:
         if self.create_error is not None:
             raise self.create_error
@@ -123,6 +156,44 @@ class FakeCustomerBookingService:
                 "customer_name": customer_name,
                 "customer_phone": customer_phone,
                 "vehicle_plate": vehicle_plate,
+                "telegram_user_id": telegram_user_id,
+                "telegram_username": telegram_username,
             }
         )
         return type("BookingResult", (), {"status": self.booking_status})()
+
+    async def get_active_booking(
+        self,
+        *,
+        car_wash_id: int,
+        telegram_user_id: int,
+        now: datetime | None = None,
+    ) -> ActiveCustomerBooking | None:
+        self.requested_active_bookings.append(
+            {
+                "car_wash_id": car_wash_id,
+                "telegram_user_id": telegram_user_id,
+                "now": now,
+            }
+        )
+        return self.active_booking
+
+    async def cancel_active_booking(
+        self,
+        *,
+        car_wash_id: int,
+        telegram_user_id: int,
+        now: datetime | None = None,
+        cancellation_deadline_minutes: int = 60,
+    ) -> bool:
+        self.cancel_requests.append(
+            {
+                "car_wash_id": car_wash_id,
+                "telegram_user_id": telegram_user_id,
+                "now": now,
+                "cancellation_deadline_minutes": cancellation_deadline_minutes,
+            }
+        )
+        if self.cancel_error is not None:
+            raise self.cancel_error
+        return self.cancel_result
