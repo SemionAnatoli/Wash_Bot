@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import repositories
 from app.db.models import Booking, Service
-from app.domain.errors import BookingSlotUnavailableError, DomainError
+from app.domain.errors import BookingSlotUnavailableError, CancellationTooLateError, DomainError
 from app.domain.services import SelectedService, calculate_total_duration
 from app.domain.slots import (
     BlockedInterval,
@@ -14,7 +14,7 @@ from app.domain.slots import (
     calculate_peak_occupancy,
     generate_available_slots,
 )
-from app.domain.statuses import BookingStatus
+from app.domain.statuses import BookingStatus, ensure_transition_allowed
 from app.domain.validation import normalize_name, normalize_phone, normalize_vehicle_plate
 from app.services.booking_service import BookingCapacity, ensure_booking_can_be_created
 
@@ -172,6 +172,8 @@ class CustomerBookingService:
         customer_name: str,
         customer_phone: str,
         vehicle_plate: str,
+        telegram_user_id: int | None = None,
+        telegram_username: str | None = None,
     ) -> Booking:
         car_wash = await repositories.get_car_wash(self._session, car_wash_id=car_wash_id)
         if car_wash is None:
@@ -249,9 +251,19 @@ class CustomerBookingService:
             )
         )
 
+        user_id: int | None = None
+        if telegram_user_id is not None:
+            user = await repositories.get_or_create_user(
+                self._session,
+                telegram_id=telegram_user_id,
+                username=telegram_username,
+            )
+            user_id = user.id
+
         customer = await repositories.create_customer(
             self._session,
             car_wash_id=car_wash_id,
+            user_id=user_id,
             name=normalize_name(customer_name),
             phone=normalize_phone(customer_phone),
             vehicle_plate=normalize_vehicle_plate(vehicle_plate),
@@ -285,3 +297,70 @@ class CustomerBookingService:
         )
         await self._session.commit()
         return booking
+
+    async def get_active_booking(
+        self,
+        car_wash_id: int,
+        telegram_user_id: int,
+        now: datetime | None = None,
+    ) -> ActiveCustomerBooking | None:
+        current_time = now or datetime.now()
+        booking_and_customer = await repositories.find_active_customer_booking(
+            self._session,
+            car_wash_id=car_wash_id,
+            telegram_user_id=telegram_user_id,
+            now=current_time,
+        )
+        if booking_and_customer is None:
+            return None
+
+        booking, customer = booking_and_customer
+        booking_services = await repositories.list_booking_services(
+            self._session,
+            car_wash_id=car_wash_id,
+            booking_id=booking.id,
+        )
+        return ActiveCustomerBooking(
+            booking_id=booking.id,
+            status=booking.status,
+            start_at=booking.start_at,
+            end_at=booking.end_at,
+            customer_name=customer.name,
+            customer_phone=customer.phone,
+            vehicle_plate=customer.vehicle_plate,
+            services=[_to_service_option(service) for _, service in booking_services],
+        )
+
+    async def cancel_active_booking(
+        self,
+        car_wash_id: int,
+        telegram_user_id: int,
+        now: datetime | None = None,
+        cancellation_deadline_minutes: int = 60,
+    ) -> bool:
+        current_time = now or datetime.now()
+        booking_and_customer = await repositories.find_active_customer_booking(
+            self._session,
+            car_wash_id=car_wash_id,
+            telegram_user_id=telegram_user_id,
+            now=current_time,
+        )
+        if booking_and_customer is None:
+            return False
+
+        booking, _ = booking_and_customer
+        cancellation_deadline = booking.start_at - timedelta(minutes=cancellation_deadline_minutes)
+        if current_time > cancellation_deadline:
+            raise CancellationTooLateError("Booking can no longer be cancelled.")
+
+        ensure_transition_allowed(
+            BookingStatus(booking.status),
+            BookingStatus.CANCELLED_BY_CUSTOMER,
+        )
+        await repositories.update_booking_status(
+            self._session,
+            booking_id=booking.id,
+            status=BookingStatus.CANCELLED_BY_CUSTOMER.value,
+        )
+        await self._session.commit()
+        return True

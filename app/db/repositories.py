@@ -11,6 +11,7 @@ from app.db.models import (
     Customer,
     NotificationJob,
     Service,
+    User,
     WorkingHours,
 )
 from app.db.models import (
@@ -203,16 +204,39 @@ async def get_car_wash(session: AsyncSession, *, car_wash_id: int) -> CarWash | 
     return result.scalar_one_or_none()
 
 
+async def get_or_create_user(
+    session: AsyncSession,
+    *,
+    telegram_id: int,
+    username: str | None,
+) -> User:
+    result = await session.execute(select(User).where(User.telegram_id == telegram_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        user = User(telegram_id=telegram_id, username=username)
+        session.add(user)
+        await session.flush()
+        return user
+
+    if username is not None and user.username != username:
+        user.username = username
+        await session.flush()
+
+    return user
+
+
 async def create_customer(
     session: AsyncSession,
     *,
     car_wash_id: int,
+    user_id: int | None = None,
     name: str,
     phone: str,
     vehicle_plate: str,
 ) -> Customer:
     customer = Customer(
         car_wash_id=car_wash_id,
+        user_id=user_id,
         name=name,
         phone=phone,
         vehicle_plate=vehicle_plate,
@@ -265,6 +289,61 @@ async def add_booking_services(
             for service_id in addon_service_ids
         ]
     )
+    await session.flush()
+
+
+async def find_active_customer_booking(
+    session: AsyncSession,
+    *,
+    car_wash_id: int,
+    telegram_user_id: int,
+    now: datetime,
+) -> tuple[Booking, Customer] | None:
+    result = await session.execute(
+        select(Booking, Customer)
+        .join(Customer, Customer.id == Booking.customer_id)
+        .join(User, User.id == Customer.user_id)
+        .where(
+            Booking.car_wash_id == car_wash_id,
+            User.telegram_id == telegram_user_id,
+            Booking.status.in_(ACTIVE_CAPACITY_STATUSES),
+            Booking.start_at > now,
+        )
+        .order_by(Booking.start_at, Booking.id)
+        .limit(1)
+    )
+    return result.one_or_none()
+
+
+async def list_booking_services(
+    session: AsyncSession,
+    *,
+    car_wash_id: int,
+    booking_id: int,
+) -> list[tuple[BookingServiceModel, Service]]:
+    result = await session.execute(
+        select(BookingServiceModel, Service)
+        .join(Service, Service.id == BookingServiceModel.service_id)
+        .where(
+            BookingServiceModel.booking_id == booking_id,
+            Service.car_wash_id == car_wash_id,
+        )
+        .order_by(BookingServiceModel.is_main.desc(), Service.id)
+    )
+    return list(result.all())
+
+
+async def update_booking_status(
+    session: AsyncSession,
+    *,
+    booking_id: int,
+    status: str,
+) -> None:
+    booking = await session.get(Booking, booking_id)
+    if booking is None:
+        return
+
+    booking.status = status
     await session.flush()
 
 
