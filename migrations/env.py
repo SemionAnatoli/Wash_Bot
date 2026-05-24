@@ -6,11 +6,10 @@ from sqlalchemy import engine_from_config, pool
 
 from app.db import models  # noqa: F401
 from app.db.base import Base
+from app.db.url import sync_database_url
 
 config = context.config
-database_url = os.environ.get("DATABASE_URL", "sqlite:///./washbot_dev.db")
-if database_url.startswith("postgresql+asyncpg://"):
-    database_url = database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+database_url = sync_database_url(os.environ.get("DATABASE_URL", "sqlite:///./washbot_dev.db"))
 config.set_main_option("sqlalchemy.url", database_url)
 
 if config.config_file_name is not None:
