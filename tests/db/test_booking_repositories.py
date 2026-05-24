@@ -335,9 +335,24 @@ async def test_claim_and_finalize_notification_job_updates_status_and_attempts(
         expected_statuses=["pending"],
         claimed_at=now,
     )
-    failed = await mark_notification_job_failed(db_session, job_id=failed_job.id, attempts=2)
-    skipped = await mark_notification_job_skipped(db_session, job_id=skipped_job.id, attempts=2)
-    sent = await mark_notification_job_sent(db_session, job_id=pending_job.id, attempts=1)
+    failed = await mark_notification_job_failed(
+        db_session,
+        job_id=failed_job.id,
+        claimed_at=failed_job.claimed_at,
+        attempts=2,
+    )
+    skipped = await mark_notification_job_skipped(
+        db_session,
+        job_id=skipped_job.id,
+        claimed_at=skipped_job.claimed_at,
+        attempts=2,
+    )
+    sent = await mark_notification_job_sent(
+        db_session,
+        job_id=pending_job.id,
+        claimed_at=now,
+        attempts=1,
+    )
     await db_session.commit()
 
     jobs = (
@@ -355,6 +370,77 @@ async def test_claim_and_finalize_notification_job_updates_status_and_attempts(
         ("failed", 2),
         ("skipped", 2),
     ]
+
+
+async def test_reclaim_stale_processing_job_rejects_second_claim_with_old_token(
+    db_session: AsyncSession,
+) -> None:
+    now = datetime(2026, 5, 24, 12, 0, 0)
+    old_claimed_at = now - timedelta(minutes=10)
+    first_reclaim_at = now
+    second_reclaim_at = now + timedelta(seconds=30)
+
+    car_wash = CarWash(name="Wash")
+    db_session.add(car_wash)
+    await db_session.flush()
+    branch = Branch(car_wash_id=car_wash.id, title="Main", address="Street", bay_count=1)
+    db_session.add(branch)
+    await db_session.flush()
+    customer = Customer(
+        car_wash_id=car_wash.id,
+        name="Semion",
+        phone="+79990000000",
+        vehicle_plate="A001AA",
+    )
+    db_session.add(customer)
+    await db_session.flush()
+    booking = Booking(
+        car_wash_id=car_wash.id,
+        branch_id=branch.id,
+        customer_id=customer.id,
+        start_at=now + timedelta(hours=1),
+        end_at=now + timedelta(hours=2),
+        status="confirmed",
+    )
+    db_session.add(booking)
+    await db_session.flush()
+    stale_job = NotificationJob(
+        car_wash_id=car_wash.id,
+        booking_id=booking.id,
+        kind="booking_reminder",
+        run_at=now - timedelta(hours=1),
+        status="processing",
+        attempts=1,
+        claimed_at=old_claimed_at,
+    )
+    db_session.add(stale_job)
+    await db_session.commit()
+
+    first_claimed = await claim_notification_job(
+        db_session,
+        job_id=stale_job.id,
+        expected_statuses=["processing"],
+        expected_claimed_at=old_claimed_at,
+        claimed_at=first_reclaim_at,
+    )
+    await db_session.commit()
+
+    second_claimed = await claim_notification_job(
+        db_session,
+        job_id=stale_job.id,
+        expected_statuses=["processing"],
+        expected_claimed_at=old_claimed_at,
+        claimed_at=second_reclaim_at,
+    )
+    await db_session.commit()
+
+    reloaded_job = await db_session.get(NotificationJob, stale_job.id)
+
+    assert first_claimed is True
+    assert second_claimed is False
+    assert reloaded_job is not None
+    assert reloaded_job.status == "processing"
+    assert reloaded_job.claimed_at == first_reclaim_at
 
 
 async def test_list_due_reminder_jobs_skips_recently_claimed_processing_jobs(
@@ -461,11 +547,13 @@ async def test_notification_job_finalization_refuses_jobs_outside_processing(
     skipped_pending = await mark_notification_job_skipped(
         db_session,
         job_id=pending_job.id,
+        claimed_at=now,
         attempts=1,
     )
     failed_sent = await mark_notification_job_failed(
         db_session,
         job_id=sent_job.id,
+        claimed_at=now,
         attempts=2,
     )
     await db_session.commit()

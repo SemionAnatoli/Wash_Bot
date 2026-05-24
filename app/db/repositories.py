@@ -390,6 +390,24 @@ async def get_booking_with_customer(
     return row[0], row[1]
 
 
+async def get_notification_job_with_booking_context(
+    session: AsyncSession,
+    *,
+    job_id: int,
+) -> tuple[NotificationJob, Booking | None, Customer | None, User | None] | None:
+    result = await session.execute(
+        select(NotificationJob, Booking, Customer, User)
+        .outerjoin(Booking, Booking.id == NotificationJob.booking_id)
+        .outerjoin(Customer, Customer.id == Booking.customer_id)
+        .outerjoin(User, User.id == Customer.user_id)
+        .where(NotificationJob.id == job_id)
+    )
+    row = result.one_or_none()
+    if row is None:
+        return None
+    return row[0], row[1], row[2], row[3]
+
+
 async def update_booking_status_if_current(
     session: AsyncSession,
     *,
@@ -484,8 +502,14 @@ async def claim_notification_job(
     *,
     job_id: int,
     expected_statuses: list[str],
+    expected_claimed_at: datetime | None = None,
     claimed_at: datetime,
 ) -> bool:
+    expected_claim_filter = (
+        NotificationJob.claimed_at.is_(None)
+        if expected_claimed_at is None
+        else NotificationJob.claimed_at == expected_claimed_at
+    )
     result = cast(
         CursorResult[Any],
         await session.execute(
@@ -493,6 +517,7 @@ async def claim_notification_job(
             .where(
                 NotificationJob.id == job_id,
                 NotificationJob.status.in_(expected_statuses),
+                expected_claim_filter,
             )
             .values(status="processing", claimed_at=claimed_at)
             .execution_options(synchronize_session="fetch")
@@ -505,6 +530,7 @@ async def mark_notification_job_sent(
     session: AsyncSession,
     *,
     job_id: int,
+    claimed_at: datetime,
     attempts: int,
 ) -> bool:
     result = cast(
@@ -514,6 +540,7 @@ async def mark_notification_job_sent(
             .where(
                 NotificationJob.id == job_id,
                 NotificationJob.status == "processing",
+                NotificationJob.claimed_at == claimed_at,
             )
             .values(status="sent", attempts=attempts, claimed_at=None)
             .execution_options(synchronize_session="fetch")
@@ -526,6 +553,7 @@ async def mark_notification_job_skipped(
     session: AsyncSession,
     *,
     job_id: int,
+    claimed_at: datetime,
     attempts: int,
 ) -> bool:
     result = cast(
@@ -535,6 +563,7 @@ async def mark_notification_job_skipped(
             .where(
                 NotificationJob.id == job_id,
                 NotificationJob.status == "processing",
+                NotificationJob.claimed_at == claimed_at,
             )
             .values(status="skipped", attempts=attempts, claimed_at=None)
             .execution_options(synchronize_session="fetch")
@@ -547,6 +576,7 @@ async def mark_notification_job_failed(
     session: AsyncSession,
     *,
     job_id: int,
+    claimed_at: datetime,
     attempts: int,
 ) -> bool:
     result = cast(
@@ -556,6 +586,7 @@ async def mark_notification_job_failed(
             .where(
                 NotificationJob.id == job_id,
                 NotificationJob.status == "processing",
+                NotificationJob.claimed_at == claimed_at,
             )
             .values(status="failed", attempts=attempts, claimed_at=None)
             .execution_options(synchronize_session="fetch")
