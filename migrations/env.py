@@ -6,10 +6,10 @@ from sqlalchemy import engine_from_config, pool
 
 from app.db import models  # noqa: F401
 from app.db.base import Base
-from app.db.url import sync_database_url
+from app.db.url import alembic_database_url
 
 config = context.config
-database_url = sync_database_url(os.environ.get("DATABASE_URL", "sqlite:///./washbot_dev.db"))
+database_url = alembic_database_url(environ=os.environ)
 config.set_main_option("sqlalchemy.url", database_url)
 
 if config.config_file_name is not None:
