@@ -2,6 +2,7 @@ from datetime import date, datetime
 
 import pytest
 
+from app.bot.admin_bookings.notifier import AdminNotificationError
 from app.bot.customer_booking.callbacks import (
     CANCEL_ACTIVE_BOOKING_CALLBACK,
     CANCEL_FLOW_CALLBACK,
@@ -46,6 +47,7 @@ from app.domain.errors import (
 )
 from app.services.customer_booking import ServiceMenu
 from tests.bot.customer_booking.fakes import (
+    FakeAdminBookingNotifier,
     FakeCallbackQuery,
     FakeCustomerBookingService,
     FakeMessage,
@@ -343,6 +345,64 @@ async def test_booking_confirmation_creates_booking_and_clears_state() -> None:
         "telegram_username": "ivan",
     }
     assert "подтверждена" in first_text(callback.message).lower()
+    assert state.cleared is True
+
+
+async def test_booking_confirmation_notifies_admin_after_success() -> None:
+    service = FakeCustomerBookingService()
+    notifier = FakeAdminBookingNotifier()
+    state = FakeState(
+        data={
+            "car_wash_id": 10,
+            "branch_id": 20,
+            "main_service_id": 1,
+            "addon_service_ids": [2],
+            "start_at": "2026-05-18T10:00:00",
+            "customer_name": "РРІР°РЅ",
+            "customer_phone": "+79131234567",
+            "vehicle_plate": "A123BC154",
+        }
+    )
+    callback = FakeCallbackQuery(data="book:confirm")
+
+    await handle_booking_confirmed(
+        callback,
+        state,
+        customer_booking_service=service,
+        admin_booking_notifier=notifier,
+    )
+
+    assert notifier.sent_booking_ids == [42]
+    assert state.cleared is True
+
+
+async def test_booking_confirmation_keeps_customer_success_when_admin_notification_fails() -> None:
+    service = FakeCustomerBookingService()
+    notifier = FakeAdminBookingNotifier(
+        send_error=AdminNotificationError("Admin notification failed.")
+    )
+    state = FakeState(
+        data={
+            "car_wash_id": 10,
+            "branch_id": 20,
+            "main_service_id": 1,
+            "addon_service_ids": [],
+            "start_at": "2026-05-18T10:00:00",
+            "customer_name": "РРІР°РЅ",
+            "customer_phone": "+79131234567",
+            "vehicle_plate": "A123BC154",
+        }
+    )
+    callback = FakeCallbackQuery(data="book:confirm")
+
+    await handle_booking_confirmed(
+        callback,
+        state,
+        customer_booking_service=service,
+        admin_booking_notifier=notifier,
+    )
+
+    assert callback.message.answers
     assert state.cleared is True
 
 

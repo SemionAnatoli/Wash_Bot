@@ -1,3 +1,4 @@
+from contextlib import suppress
 from datetime import date, datetime, timedelta
 from typing import Any, cast
 
@@ -6,6 +7,7 @@ from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
+from app.bot.admin_bookings.notifier import AdminBookingNotifier, AdminNotificationError
 from app.bot.customer_booking.callbacks import (
     ADDONS_DONE_CALLBACK,
     BOOKING_START_CALLBACK,
@@ -335,6 +337,7 @@ async def handle_booking_confirmed(
     state: FSMContext,
     *,
     customer_booking_service: CustomerBookingService,
+    admin_booking_notifier: AdminBookingNotifier | None = None,
 ) -> None:
     await callback.answer()
 
@@ -365,6 +368,13 @@ async def handle_booking_confirmed(
         return
 
     await state.clear()
+    if admin_booking_notifier is not None:
+        with suppress(AdminNotificationError):
+            await admin_booking_notifier.notify_new_booking(
+                car_wash_id=int(data["car_wash_id"]),
+                booking_id=booking.id,
+            )
+
     text = CONFIRMED_TEXT if booking.status == "confirmed" else PENDING_TEXT
     await _callback_message(callback).answer(text)
 

@@ -160,7 +160,7 @@ class FakeCustomerBookingService:
                 "telegram_username": telegram_username,
             }
         )
-        return type("BookingResult", (), {"status": self.booking_status})()
+        return type("BookingResult", (), {"id": 42, "status": self.booking_status})()
 
     async def get_active_booking(
         self,
@@ -197,3 +197,14 @@ class FakeCustomerBookingService:
         if self.cancel_error is not None:
             raise self.cancel_error
         return self.cancel_result
+
+
+@dataclass
+class FakeAdminBookingNotifier:
+    sent_booking_ids: list[int] = field(default_factory=list)
+    send_error: Exception | None = None
+
+    async def notify_new_booking(self, *, car_wash_id: int, booking_id: int) -> None:
+        if self.send_error is not None:
+            raise self.send_error
+        self.sent_booking_ids.append(booking_id)
