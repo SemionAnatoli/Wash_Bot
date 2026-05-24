@@ -5,6 +5,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.services.admin_booking import AdminBookingService
 from app.services.customer_booking import CustomerBookingService
 
 
@@ -21,4 +22,9 @@ class CustomerBookingServiceMiddleware(BaseMiddleware):
         async with self._sessionmaker() as session:
             data["db_session"] = session
             data["customer_booking_service"] = CustomerBookingService(session)
+            admin_telegram_ids = tuple(data.get("admin_telegram_ids", ()))
+            data["admin_booking_service"] = AdminBookingService(
+                session,
+                admin_telegram_ids=admin_telegram_ids,
+            )
             return await handler(event, data)
