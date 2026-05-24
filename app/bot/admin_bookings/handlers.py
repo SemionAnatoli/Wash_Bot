@@ -20,8 +20,6 @@ from app.services.admin_booking import (
     AdminBookingService,
 )
 
-router = Router(name="admin_bookings")
-
 
 def _callback_message(callback: CallbackQuery) -> Message:
     if callback.message is None:
@@ -121,6 +119,21 @@ def _action_reply_markup(result: AdminBookingActionResult) -> InlineKeyboardMark
     )
 
 
-router.callback_query.register(handle_admin_today_requested, F.data == ADMIN_TODAY_CALLBACK)
-router.callback_query.register(handle_admin_booking_confirmed, F.data.startswith("admin:confirm:"))
-router.callback_query.register(handle_admin_booking_cancelled, F.data.startswith("admin:cancel:"))
+def create_router() -> Router:
+    admin_router = Router(name="admin_bookings")
+    admin_router.callback_query.register(
+        handle_admin_today_requested,
+        F.data == ADMIN_TODAY_CALLBACK,
+    )
+    admin_router.callback_query.register(
+        handle_admin_booking_confirmed,
+        F.data.startswith("admin:confirm:"),
+    )
+    admin_router.callback_query.register(
+        handle_admin_booking_cancelled,
+        F.data.startswith("admin:cancel:"),
+    )
+    return admin_router
+
+
+router = create_router()
