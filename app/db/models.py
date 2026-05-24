@@ -196,5 +196,6 @@ class NotificationJob(Base):
     booking_id: Mapped[int | None] = mapped_column(ForeignKey("bookings.id"), nullable=True)
     kind: Mapped[str] = mapped_column(String(60), nullable=False)
     run_at: Mapped[datetime] = mapped_column(nullable=False, index=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="pending")
     attempts: Mapped[int] = mapped_column(Integer, default=0)

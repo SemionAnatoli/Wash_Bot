@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, cast
 
-from sqlalchemy import Select, func, select, update
+from sqlalchemy import Select, func, or_, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -446,9 +446,119 @@ async def create_notification_job(
         booking_id=booking_id,
         kind=kind,
         run_at=run_at,
+        claimed_at=None,
         status="pending",
         attempts=0,
     )
     session.add(job)
     await session.flush()
     return job
+
+
+async def list_due_reminder_jobs(
+    session: AsyncSession,
+    *,
+    now: datetime,
+    stale_before: datetime,
+    limit: int,
+) -> list[NotificationJob]:
+    result = await session.execute(
+        select(NotificationJob)
+        .where(
+            NotificationJob.kind == "booking_reminder",
+            or_(
+                (NotificationJob.status == "pending") & (NotificationJob.run_at <= now),
+                (NotificationJob.status == "processing")
+                & (NotificationJob.claimed_at.is_not(None))
+                & (NotificationJob.claimed_at <= stale_before),
+            ),
+        )
+        .order_by(NotificationJob.run_at, NotificationJob.id)
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def claim_notification_job(
+    session: AsyncSession,
+    *,
+    job_id: int,
+    expected_statuses: list[str],
+    claimed_at: datetime,
+) -> bool:
+    result = cast(
+        CursorResult[Any],
+        await session.execute(
+            update(NotificationJob)
+            .where(
+                NotificationJob.id == job_id,
+                NotificationJob.status.in_(expected_statuses),
+            )
+            .values(status="processing", claimed_at=claimed_at)
+            .execution_options(synchronize_session="fetch")
+        ),
+    )
+    return result.rowcount == 1
+
+
+async def mark_notification_job_sent(
+    session: AsyncSession,
+    *,
+    job_id: int,
+    attempts: int,
+) -> bool:
+    result = cast(
+        CursorResult[Any],
+        await session.execute(
+            update(NotificationJob)
+            .where(
+                NotificationJob.id == job_id,
+                NotificationJob.status == "processing",
+            )
+            .values(status="sent", attempts=attempts, claimed_at=None)
+            .execution_options(synchronize_session="fetch")
+        ),
+    )
+    return result.rowcount == 1
+
+
+async def mark_notification_job_skipped(
+    session: AsyncSession,
+    *,
+    job_id: int,
+    attempts: int,
+) -> bool:
+    result = cast(
+        CursorResult[Any],
+        await session.execute(
+            update(NotificationJob)
+            .where(
+                NotificationJob.id == job_id,
+                NotificationJob.status == "processing",
+            )
+            .values(status="skipped", attempts=attempts, claimed_at=None)
+            .execution_options(synchronize_session="fetch")
+        ),
+    )
+    return result.rowcount == 1
+
+
+async def mark_notification_job_failed(
+    session: AsyncSession,
+    *,
+    job_id: int,
+    attempts: int,
+) -> bool:
+    result = cast(
+        CursorResult[Any],
+        await session.execute(
+            update(NotificationJob)
+            .where(
+                NotificationJob.id == job_id,
+                NotificationJob.status == "processing",
+            )
+            .values(status="failed", attempts=attempts, claimed_at=None)
+            .execution_options(synchronize_session="fetch")
+        ),
+    )
+    return result.rowcount == 1

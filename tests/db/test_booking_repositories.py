@@ -1,4 +1,4 @@
-from datetime import time
+from datetime import datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
@@ -6,13 +6,27 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.db.base import Base
-from app.db.models import Branch, CarWash, Service, User, WorkingHours
+from app.db.models import (
+    Booking,
+    Branch,
+    CarWash,
+    Customer,
+    NotificationJob,
+    Service,
+    User,
+    WorkingHours,
+)
 from app.db.repositories import (
+    claim_notification_job,
     get_branch,
     get_or_create_user,
     get_working_hours_for_weekday,
     list_active_addon_services,
     list_active_main_services,
+    list_due_reminder_jobs,
+    mark_notification_job_failed,
+    mark_notification_job_sent,
+    mark_notification_job_skipped,
 )
 
 
@@ -157,3 +171,314 @@ async def test_get_or_create_user_recovers_from_unique_conflict(tmp_path) -> Non
         assert users[0].username == "resolved_username"
     finally:
         await engine.dispose()
+
+
+async def test_list_due_reminder_jobs_returns_pending_and_stale_processing_jobs(
+    db_session: AsyncSession,
+) -> None:
+    now = datetime(2026, 5, 24, 12, 0, 0)
+    stale_before = now - timedelta(minutes=5)
+
+    car_wash = CarWash(name="Wash")
+    db_session.add(car_wash)
+    await db_session.flush()
+    branch = Branch(car_wash_id=car_wash.id, title="Main", address="Street", bay_count=1)
+    db_session.add(branch)
+    await db_session.flush()
+    customer = Customer(
+        car_wash_id=car_wash.id,
+        name="Semion",
+        phone="+79990000000",
+        vehicle_plate="A001AA",
+    )
+    db_session.add(customer)
+    await db_session.flush()
+    booking = Booking(
+        car_wash_id=car_wash.id,
+        branch_id=branch.id,
+        customer_id=customer.id,
+        start_at=now + timedelta(hours=1),
+        end_at=now + timedelta(hours=2),
+        status="confirmed",
+    )
+    db_session.add(booking)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            NotificationJob(
+                car_wash_id=car_wash.id,
+                booking_id=booking.id,
+                kind="booking_reminder",
+                run_at=now - timedelta(minutes=1),
+                status="pending",
+                attempts=0,
+            ),
+            NotificationJob(
+                car_wash_id=car_wash.id,
+                booking_id=booking.id,
+                kind="booking_reminder",
+                run_at=now - timedelta(minutes=10),
+                status="processing",
+                attempts=1,
+                claimed_at=now - timedelta(minutes=10),
+            ),
+            NotificationJob(
+                car_wash_id=car_wash.id,
+                booking_id=booking.id,
+                kind="booking_reminder",
+                run_at=now + timedelta(minutes=10),
+                status="pending",
+                attempts=0,
+            ),
+            NotificationJob(
+                car_wash_id=car_wash.id,
+                booking_id=booking.id,
+                kind="return_visit",
+                run_at=now - timedelta(minutes=3),
+                status="pending",
+                attempts=0,
+            ),
+            NotificationJob(
+                car_wash_id=car_wash.id,
+                booking_id=booking.id,
+                kind="booking_reminder",
+                run_at=now - timedelta(minutes=3),
+                status="sent",
+                attempts=1,
+            ),
+            NotificationJob(
+                car_wash_id=car_wash.id,
+                booking_id=booking.id,
+                kind="booking_reminder",
+                run_at=now - timedelta(minutes=20),
+                status="processing",
+                attempts=1,
+                claimed_at=now - timedelta(minutes=1),
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    jobs = await list_due_reminder_jobs(
+        db_session,
+        now=now,
+        stale_before=stale_before,
+        limit=10,
+    )
+
+    assert [job.status for job in jobs] == ["processing", "pending"]
+    assert [job.attempts for job in jobs] == [1, 0]
+    assert all(job.claimed_at != now - timedelta(minutes=1) for job in jobs)
+
+
+async def test_claim_and_finalize_notification_job_updates_status_and_attempts(
+    db_session: AsyncSession,
+) -> None:
+    now = datetime(2026, 5, 24, 12, 0, 0)
+
+    car_wash = CarWash(name="Wash")
+    db_session.add(car_wash)
+    await db_session.flush()
+    branch = Branch(car_wash_id=car_wash.id, title="Main", address="Street", bay_count=1)
+    db_session.add(branch)
+    await db_session.flush()
+    customer = Customer(
+        car_wash_id=car_wash.id,
+        name="Semion",
+        phone="+79990000000",
+        vehicle_plate="A001AA",
+    )
+    db_session.add(customer)
+    await db_session.flush()
+    booking = Booking(
+        car_wash_id=car_wash.id,
+        branch_id=branch.id,
+        customer_id=customer.id,
+        start_at=now + timedelta(hours=1),
+        end_at=now + timedelta(hours=2),
+        status="confirmed",
+    )
+    db_session.add(booking)
+    await db_session.flush()
+    pending_job = NotificationJob(
+        car_wash_id=car_wash.id,
+        booking_id=booking.id,
+        kind="booking_reminder",
+        run_at=now,
+        status="pending",
+        attempts=0,
+    )
+    failed_job = NotificationJob(
+        car_wash_id=car_wash.id,
+        booking_id=booking.id,
+        kind="booking_reminder",
+        run_at=now,
+        status="processing",
+        attempts=1,
+        claimed_at=now - timedelta(minutes=10),
+    )
+    skipped_job = NotificationJob(
+        car_wash_id=car_wash.id,
+        booking_id=booking.id,
+        kind="booking_reminder",
+        run_at=now,
+        status="processing",
+        attempts=2,
+        claimed_at=now - timedelta(minutes=10),
+    )
+    db_session.add_all([pending_job, failed_job, skipped_job])
+    await db_session.commit()
+
+    claimed = await claim_notification_job(
+        db_session,
+        job_id=pending_job.id,
+        expected_statuses=["pending"],
+        claimed_at=now,
+    )
+    failed = await mark_notification_job_failed(db_session, job_id=failed_job.id, attempts=2)
+    skipped = await mark_notification_job_skipped(db_session, job_id=skipped_job.id, attempts=2)
+    sent = await mark_notification_job_sent(db_session, job_id=pending_job.id, attempts=1)
+    await db_session.commit()
+
+    jobs = (
+        (await db_session.execute(select(NotificationJob).order_by(NotificationJob.id)))
+        .scalars()
+        .all()
+    )
+
+    assert claimed is True
+    assert failed is True
+    assert skipped is True
+    assert sent is True
+    assert [(job.status, job.attempts) for job in jobs] == [
+        ("sent", 1),
+        ("failed", 2),
+        ("skipped", 2),
+    ]
+
+
+async def test_list_due_reminder_jobs_skips_recently_claimed_processing_jobs(
+    db_session: AsyncSession,
+) -> None:
+    now = datetime(2026, 5, 24, 12, 0, 0)
+    stale_before = now - timedelta(minutes=5)
+
+    car_wash = CarWash(name="Wash")
+    db_session.add(car_wash)
+    await db_session.flush()
+    branch = Branch(car_wash_id=car_wash.id, title="Main", address="Street", bay_count=1)
+    db_session.add(branch)
+    await db_session.flush()
+    customer = Customer(
+        car_wash_id=car_wash.id,
+        name="Semion",
+        phone="+79990000000",
+        vehicle_plate="A001AA",
+    )
+    db_session.add(customer)
+    await db_session.flush()
+    booking = Booking(
+        car_wash_id=car_wash.id,
+        branch_id=branch.id,
+        customer_id=customer.id,
+        start_at=now + timedelta(hours=1),
+        end_at=now + timedelta(hours=2),
+        status="confirmed",
+    )
+    db_session.add(booking)
+    await db_session.flush()
+    db_session.add(
+        NotificationJob(
+            car_wash_id=car_wash.id,
+            booking_id=booking.id,
+            kind="booking_reminder",
+            run_at=now - timedelta(minutes=30),
+            status="processing",
+            attempts=1,
+            claimed_at=now - timedelta(minutes=1),
+        )
+    )
+    await db_session.commit()
+
+    jobs = await list_due_reminder_jobs(
+        db_session,
+        now=now,
+        stale_before=stale_before,
+        limit=10,
+    )
+
+    assert jobs == []
+
+
+async def test_notification_job_finalization_refuses_jobs_outside_processing(
+    db_session: AsyncSession,
+) -> None:
+    now = datetime(2026, 5, 24, 12, 0, 0)
+
+    car_wash = CarWash(name="Wash")
+    db_session.add(car_wash)
+    await db_session.flush()
+    branch = Branch(car_wash_id=car_wash.id, title="Main", address="Street", bay_count=1)
+    db_session.add(branch)
+    await db_session.flush()
+    customer = Customer(
+        car_wash_id=car_wash.id,
+        name="Semion",
+        phone="+79990000000",
+        vehicle_plate="A001AA",
+    )
+    db_session.add(customer)
+    await db_session.flush()
+    booking = Booking(
+        car_wash_id=car_wash.id,
+        branch_id=branch.id,
+        customer_id=customer.id,
+        start_at=now + timedelta(hours=1),
+        end_at=now + timedelta(hours=2),
+        status="confirmed",
+    )
+    db_session.add(booking)
+    await db_session.flush()
+    pending_job = NotificationJob(
+        car_wash_id=car_wash.id,
+        booking_id=booking.id,
+        kind="booking_reminder",
+        run_at=now,
+        status="pending",
+        attempts=0,
+    )
+    sent_job = NotificationJob(
+        car_wash_id=car_wash.id,
+        booking_id=booking.id,
+        kind="booking_reminder",
+        run_at=now,
+        status="sent",
+        attempts=1,
+    )
+    db_session.add_all([pending_job, sent_job])
+    await db_session.commit()
+
+    skipped_pending = await mark_notification_job_skipped(
+        db_session,
+        job_id=pending_job.id,
+        attempts=1,
+    )
+    failed_sent = await mark_notification_job_failed(
+        db_session,
+        job_id=sent_job.id,
+        attempts=2,
+    )
+    await db_session.commit()
+
+    jobs = (
+        (await db_session.execute(select(NotificationJob).order_by(NotificationJob.id)))
+        .scalars()
+        .all()
+    )
+
+    assert skipped_pending is False
+    assert failed_sent is False
+    assert [(job.status, job.attempts) for job in jobs] == [
+        ("pending", 0),
+        ("sent", 1),
+    ]
