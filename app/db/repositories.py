@@ -347,6 +347,71 @@ async def list_booking_services(
     return [(booking_service, service) for booking_service, service in result.all()]
 
 
+async def list_bookings_for_day(
+    session: AsyncSession,
+    *,
+    car_wash_id: int,
+    branch_id: int,
+    day_start: datetime,
+    day_end: datetime,
+) -> list[Booking]:
+    result = await session.execute(
+        select(Booking)
+        .where(
+            Booking.car_wash_id == car_wash_id,
+            Booking.branch_id == branch_id,
+            Booking.status.in_(ACTIVE_CAPACITY_STATUSES),
+            Booking.start_at >= day_start,
+            Booking.start_at < day_end,
+        )
+        .order_by(Booking.start_at, Booking.id)
+    )
+    return list(result.scalars().all())
+
+
+async def get_booking_with_customer(
+    session: AsyncSession,
+    *,
+    car_wash_id: int,
+    booking_id: int,
+) -> tuple[Booking, Customer] | None:
+    result = await session.execute(
+        select(Booking, Customer)
+        .join(Customer, Customer.id == Booking.customer_id)
+        .where(
+            Booking.car_wash_id == car_wash_id,
+            Booking.id == booking_id,
+            Customer.car_wash_id == car_wash_id,
+        )
+    )
+    row = result.one_or_none()
+    if row is None:
+        return None
+    return row[0], row[1]
+
+
+async def update_booking_status_if_current(
+    session: AsyncSession,
+    *,
+    booking_id: int,
+    current_statuses: list[str],
+    new_status: str,
+) -> bool:
+    result = cast(
+        CursorResult[Any],
+        await session.execute(
+            update(Booking)
+            .where(
+                Booking.id == booking_id,
+                Booking.status.in_(current_statuses),
+            )
+            .values(status=new_status)
+            .execution_options(synchronize_session="fetch")
+        ),
+    )
+    return result.rowcount == 1
+
+
 async def update_active_booking_status(
     session: AsyncSession,
     *,
