@@ -6,6 +6,7 @@ from app.bot.customer_booking.messages import (
     ACTIVE_BOOKING_CANCEL_TOO_LATE_TEXT,
     ACTIVE_BOOKING_CANCELLED_TEXT,
     ACTIVE_BOOKING_EMPTY_TEXT,
+    CHOOSE_ADDONS_TEXT,
     format_active_booking_summary,
     format_booking_summary,
     format_duration,
@@ -58,11 +59,13 @@ def test_active_booking_text_constants_are_stable() -> None:
 
 
 def test_active_booking_already_exists_text_is_stable() -> None:
-    assert (
-        ACTIVE_BOOKING_ALREADY_EXISTS_TEXT
-        == "У вас уже есть активная запись. Откройте «Моя запись», "
-        "чтобы посмотреть или отменить её."
+    assert ACTIVE_BOOKING_ALREADY_EXISTS_TEXT == (
+        "У вас уже есть активная запись. Откройте «Моя запись», чтобы посмотреть или отменить её."
     )
+
+
+def test_choose_addons_text_tells_user_to_press_continue() -> None:
+    assert CHOOSE_ADDONS_TEXT == "Выберите дополнительные услуги и нажмите «Продолжить»:"
 
 
 def test_booking_summary_escapes_html_dynamic_fields() -> None:

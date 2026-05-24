@@ -6,7 +6,7 @@ from app.services.customer_booking import ActiveCustomerBooking, ServiceOption
 
 START_TEXT = "Здравствуйте! Помогу записаться на автомойку."
 CHOOSE_SERVICE_TEXT = "Выберите услугу:"
-CHOOSE_ADDONS_TEXT = "Выберите дополнительные услуги:"
+CHOOSE_ADDONS_TEXT = "Выберите дополнительные услуги и нажмите «Продолжить»:"
 CHOOSE_DATE_TEXT = "Выберите дату записи:"
 CHOOSE_SLOT_TEXT = "Выберите свободное время:"
 ASK_NAME_TEXT = "Введите ваше имя:"

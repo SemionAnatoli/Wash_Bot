@@ -5,6 +5,7 @@ from typing import Literal, Protocol
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import repositories
+from app.services.reminder_messages import format_booking_reminder_text
 
 DeliveryOutcome = Literal["sent", "skipped", "failed"]
 
@@ -48,7 +49,7 @@ class ReminderDeliveryService:
         try:
             await self.gateway.send_message(
                 user.telegram_id,
-                self._build_reminder_text(booking.start_at),
+                format_booking_reminder_text(booking.start_at),
             )
         except Exception:
             return await self._finalize_failed(
@@ -119,10 +120,3 @@ class ReminderDeliveryService:
             raise RuntimeError("Notification job state changed concurrently.")
         await self.db_session.commit()
         return outcome
-
-    def _build_reminder_text(self, start_at: datetime) -> str:
-        return (
-            "Napominanie: vy zapisany na avtomoyku "
-            f"{start_at:%d.%m.%Y} v {start_at:%H:%M}. "
-            "Esli plany izmenilis, otmenite zapis zaranee v bote."
-        )
