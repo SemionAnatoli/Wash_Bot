@@ -17,6 +17,7 @@ def test_gitignore_excludes_local_sqlite_data_directory() -> None:
     text = (ROOT / ".gitignore").read_text(encoding="utf-8")
 
     assert "data/" in text.splitlines()
+    assert ".env" in text.splitlines()
 
 
 def test_readme_documents_local_demo_runbook() -> None:
