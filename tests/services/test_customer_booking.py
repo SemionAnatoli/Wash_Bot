@@ -25,7 +25,17 @@ from app.domain.errors import (
     DomainError,
 )
 from app.domain.statuses import BookingStatus
+from app.services.admin_booking import AdminBookingActionStatus, AdminBookingService
 from app.services.customer_booking import CustomerBookingService
+from app.worker.reminders import process_due_reminder_jobs
+
+
+class FakeReminderGateway:
+    def __init__(self) -> None:
+        self.calls: list[tuple[int, str]] = []
+
+    async def send_message(self, telegram_id: int, text: str) -> None:
+        self.calls.append((telegram_id, text))
 
 
 async def test_get_service_menu_returns_main_services_and_addons(
@@ -237,6 +247,87 @@ async def test_create_booking_links_customer_to_telegram_user(
     assert customer.user_id == user.id
 
 
+async def test_manual_booking_confirmation_allows_worker_to_send_reminder(
+    db_session: AsyncSession,
+) -> None:
+    now = datetime(2026, 6, 1, 9)
+    start_at = datetime(2026, 6, 1, 10)
+    car_wash = CarWash(name="Wash", confirmation_mode="manual", reminder_before_minutes=60)
+    db_session.add(car_wash)
+    await db_session.flush()
+    branch = Branch(car_wash_id=car_wash.id, title="Main", address="Street", bay_count=1)
+    db_session.add(branch)
+    await db_session.flush()
+    main_service = Service(
+        car_wash_id=car_wash.id,
+        title="Standard",
+        category="wash",
+        price=Decimal("900"),
+        duration_minutes=60,
+        is_addon=False,
+        is_active=True,
+    )
+    db_session.add(main_service)
+    await db_session.flush()
+    db_session.add(
+        WorkingHours(
+            car_wash_id=car_wash.id,
+            branch_id=branch.id,
+            weekday=start_at.weekday(),
+            start_time=time(10),
+            end_time=time(12),
+        )
+    )
+    await db_session.commit()
+
+    booking = await CustomerBookingService(db_session).create_booking(
+        car_wash_id=car_wash.id,
+        branch_id=branch.id,
+        selected_service_ids=[main_service.id],
+        start_at=start_at,
+        customer_name="Ivan",
+        customer_phone="+79131234567",
+        vehicle_plate="A123BC154",
+        telegram_user_id=123456789,
+        telegram_username="ivan_detailing",
+    )
+    assert booking.status == BookingStatus.PENDING.value
+
+    confirm_result = await AdminBookingService(
+        db_session,
+        admin_telegram_ids=(1001,),
+    ).confirm_booking(car_wash_id=car_wash.id, booking_id=booking.id)
+    sessionmaker = async_sessionmaker(bind=db_session.bind, expire_on_commit=False)
+    gateway = FakeReminderGateway()
+
+    worker_result = await process_due_reminder_jobs(sessionmaker, gateway, now=now)
+
+    async with sessionmaker() as verification_session:
+        persisted_booking_status = (
+            await verification_session.execute(
+                select(Booking.status).where(Booking.id == booking.id)
+            )
+        ).scalar_one()
+        persisted_job = (
+            await verification_session.execute(
+                select(NotificationJob).where(NotificationJob.booking_id == booking.id)
+            )
+        ).scalar_one()
+
+    assert confirm_result.status == AdminBookingActionStatus.CHANGED
+    assert confirm_result.booking is not None
+    assert confirm_result.booking.status == BookingStatus.CONFIRMED.value
+    assert worker_result.sent == 1
+    assert worker_result.skipped == 0
+    assert worker_result.failed == 0
+    assert gateway.calls == [(123456789, gateway.calls[0][1])]
+    assert "01.06.2026" in gateway.calls[0][1]
+    assert "10:00" in gateway.calls[0][1]
+    assert persisted_booking_status == BookingStatus.CONFIRMED.value
+    assert persisted_job.status == "sent"
+    assert persisted_job.attempts == 1
+
+
 async def test_create_booking_reuses_existing_telegram_user_and_updates_username(
     db_session: AsyncSession,
 ) -> None:
@@ -331,7 +422,7 @@ async def test_create_booking_rejects_second_future_active_booking_for_same_tele
         car_wash_id=car_wash.id,
         branch_id=branch.id,
         selected_service_ids=[service.id],
-        start_at=datetime(2026, 5, 25, 10),
+        start_at=datetime(2026, 6, 1, 10),
         customer_name="Ivan",
         customer_phone="+79131234567",
         vehicle_plate="A123BC154",
@@ -344,7 +435,7 @@ async def test_create_booking_rejects_second_future_active_booking_for_same_tele
             car_wash_id=car_wash.id,
             branch_id=branch.id,
             selected_service_ids=[service.id],
-            start_at=datetime(2026, 5, 25, 12),
+            start_at=datetime(2026, 6, 1, 12),
             customer_name="Ivan",
             customer_phone="+79131234567",
             vehicle_plate="A123BC154",
@@ -357,7 +448,7 @@ async def test_create_booking_rejects_second_future_active_booking_for_same_tele
     active_booking = await booking_service.get_active_booking(
         car_wash_id=car_wash.id,
         telegram_user_id=123456789,
-        now=datetime(2026, 5, 25, 9),
+        now=datetime(2026, 6, 1, 9),
     )
 
     assert len(customers) == 1
