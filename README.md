@@ -61,10 +61,16 @@ python -m scripts.seed_demo
 The seed creates one demo car wash, one branch, working hours from 10:00 to 20:00, main services,
 and add-on services.
 
-### 4. Start The Bot
+### 4. Start Runtime Processes
 
 ```bash
 python -m app.bot.main
+```
+
+In a second terminal, start the reminder worker:
+
+```bash
+python -m app.worker.main
 ```
 
 ### 5. Manual Test Scenario
